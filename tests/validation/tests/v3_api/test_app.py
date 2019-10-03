@@ -1,4 +1,21 @@
 from .common import *  # NOQA
+import pytest
+from .test_rbac import create_user
+
+project_detail = {"project": None, "namespace": None, "cluster": None,
+                  "project2": None, "namespace2": None, "cluster2": None}
+user_token = {1: {"user": None, "token": None},
+              2: {"user": None, "token": None},
+              3: {"user": None, "token": None},
+              4: {"user": None, "token": None}}
+
+CATALOG_URL = "https://git.rancher.io/charts"
+MYSQL_EXTERNALID_037 = "catalog://?catalog=library&template=mysql" \
+                       "&version=0.3.7"
+MYSQL_EXTERNALID_038 = "catalog://?catalog=library&template=mysql" \
+                       "&version=0.3.8"
+WORDPRESS_EXTID = "catalog://?catalog=library&template=wordpress" \
+                  "&version=1.0.5"
 
 
 def cluster_and_client(cluster_id, mgmt_client):
@@ -61,7 +78,8 @@ def test_tiller():
                        )
 
     p = admin_client.reload(p)
-    proj_client = rancher.Client(url=p.links.self + '/schemas', verify=False,
+    proj_client = rancher.Client(url=p.links.self +
+                                 '/schemas', verify=False,
                                  token=ADMIN_TOKEN)
     # need a cluster scoped client to create a namespace
     _cluster, cluster_client = cluster_and_client(cluster_id, admin_client)
@@ -73,45 +91,12 @@ def test_tiller():
                                              }}
                                          )
     wait_for_template_to_be_created(admin_client, "library")
-    answers = {
-        "defaultImage": "true",
-        "externalDatabase.database": "",
-        "externalDatabase.host": "",
-        "externalDatabase.password": "",
-        "externalDatabase.port": "3306",
-        "externalDatabase.user": "",
-        "image.repository": "bitnami/wordpress",
-        "image.tag": "4.9.4",
-        "ingress.enabled": "true",
-        "ingress.hosts[0].name": "xip.io",
-        "mariadb.enabled": "true",
-        "mariadb.image.repository": "bitnami/mariadb",
-        "mariadb.image.tag": "10.1.32",
-        "mariadb.mariadbDatabase": "wordpress",
-        "mariadb.mariadbPassword": "",
-        "mariadb.mariadbUser": "wordpress",
-        "mariadb.persistence.enabled": "false",
-        "mariadb.persistence.size": "8Gi",
-        "mariadb.persistence.storageClass": "",
-        "nodePorts.http": "",
-        "nodePorts.https": "",
-        "persistence.enabled": "false",
-        "persistence.size": "10Gi",
-        "persistence.storageClass": "",
-        "serviceType": "NodePort",
-        "wordpressEmail": "user@example.com",
-        "wordpressPassword": "",
-        "wordpressUsername": "user"
-    }
-
-    external_id = "catalog://?catalog=library&template=wordpress" \
-                  "&version=1.0.5&namespace=cattle-global-data"
     app = proj_client.create_app(
         name=name,
-        externalId=external_id,
+        externalId=WORDPRESS_EXTID,
         targetNamespace=ns.name,
         projectId=p.id,
-        answers=answers
+        answers=get_defaut_question_answers(admin_client, WORDPRESS_EXTID)
     )
 
     app = proj_client.reload(app)
@@ -119,3 +104,231 @@ def test_tiller():
     wait_for_condition(proj_client, app, check_condition('Installed', 'False'))
     # cleanup by deleting project
     admin_client.delete(p)
+
+
+def test_app_deploy():
+    admin_client = get_admin_client()
+    proj_client = get_project_client_for_token(
+        project_detail["project"],
+        ADMIN_TOKEN)
+    wait_for_template_to_be_created(admin_client, "library")
+    app = proj_client.create_app(
+        name=random_test_name(),
+        externalId=MYSQL_EXTERNALID_037,
+        targetNamespace=project_detail["namespace"].name,
+        projectId=project_detail["project"].id,
+        answers=get_defaut_question_answers(
+            admin_client,
+            MYSQL_EXTERNALID_037))
+    print("App is active")
+    app = wait_for_app_to_active(proj_client, app.id)
+    proj_client.delete(app)
+
+
+def test_app_delete():
+    admin_client = get_admin_client()
+    proj_client = get_project_client_for_token(
+        project_detail["project"],
+        ADMIN_TOKEN)
+    wait_for_template_to_be_created(admin_client, "library")
+    app = proj_client.create_app(
+        name=random_test_name(),
+        externalId=MYSQL_EXTERNALID_037,
+        targetNamespace=project_detail["namespace"].name,
+        projectId=project_detail["project"].id,
+        answers=get_defaut_question_answers(
+            admin_client,
+            MYSQL_EXTERNALID_037))
+    print("App is active")
+    app = wait_for_app_to_active(proj_client, app.id)
+    app = proj_client.delete(app)
+    validate_app_deletion(proj_client, app.id)
+
+
+def test_app_upgrade_version():
+    admin_client = get_admin_client()
+    proj_client = get_project_client_for_token(
+        project_detail["project"],
+        ADMIN_TOKEN)
+    wait_for_template_to_be_created(admin_client, "library")
+    app = proj_client.create_app(
+        name=random_test_name(),
+        externalId=MYSQL_EXTERNALID_037,
+        targetNamespace=project_detail["namespace"].name,
+        projectId=project_detail["project"].id,
+        answers=get_defaut_question_answers(
+            admin_client,
+            MYSQL_EXTERNALID_037))
+    print("App is active")
+    app = wait_for_app_to_active(proj_client, app.id)
+    app = proj_client.update(
+        obj=app,
+        externalId=MYSQL_EXTERNALID_038,
+        targetNamespace=project_detail["namespace"].name,
+        projectId=project_detail["project"].id,
+        answers=get_defaut_question_answers(
+            admin_client,
+            MYSQL_EXTERNALID_038))
+    app = proj_client.reload(app)
+    app = wait_for_app_to_active(proj_client, app.id)
+    assert app.externalId == MYSQL_EXTERNALID_038, "incorrect template version"
+    proj_client.delete(app)
+
+
+def test_app_rollback():
+    admin_client = get_admin_client()
+    proj_client = get_project_client_for_token(
+        project_detail["project"],
+        ADMIN_TOKEN)
+    wait_for_template_to_be_created(admin_client, "library")
+    app = proj_client.create_app(
+        name=random_test_name(),
+        externalId=MYSQL_EXTERNALID_037,
+        targetNamespace=project_detail["namespace"].name,
+        projectId=project_detail["project"].id,
+        answers=get_defaut_question_answers(
+            admin_client,
+            MYSQL_EXTERNALID_037))
+    print("App is active")
+    app = wait_for_app_to_active(proj_client, app.id)
+    rev_id = app.appRevisionId
+    app = proj_client.update(
+        obj=app,
+        externalId=MYSQL_EXTERNALID_038,
+        targetNamespace=project_detail["namespace"].name,
+        projectId=project_detail["project"].id,
+        answers=get_defaut_question_answers(
+            admin_client,
+            MYSQL_EXTERNALID_038))
+    app = proj_client.reload(app)
+    app = wait_for_app_to_active(proj_client, app.id)
+    assert app.externalId == MYSQL_EXTERNALID_038, "incorrect template version"
+    proj_client.action(obj=app,
+                       action_name='rollback',
+                       revisionId=rev_id)
+    app = proj_client.reload(app)
+    app = wait_for_app_to_active(proj_client, app.id)
+    assert app.externalId == MYSQL_EXTERNALID_037, "incorrect template version"
+    proj_client.delete(app)
+
+
+def test_app_answer_override():
+    admin_client = get_admin_client()
+    proj_client = get_project_client_for_token(
+        project_detail["project"],
+        ADMIN_TOKEN)
+    wait_for_template_to_be_created(admin_client, "library")
+    answers = get_defaut_question_answers(
+        admin_client,
+        MYSQL_EXTERNALID_037)
+    app = proj_client.create_app(
+        name=random_test_name(),
+        externalId=MYSQL_EXTERNALID_037,
+        targetNamespace=project_detail["namespace"].name,
+        projectId=project_detail["project"].id,
+        answers=answers)
+    print("App is active")
+    app = wait_for_app_to_active(proj_client, app.id)
+    answers["mysqlUser"] = "admin1234"
+    app = proj_client.update(
+        obj=app,
+        externalId=MYSQL_EXTERNALID_037,
+        targetNamespace=project_detail["namespace"].name,
+        projectId=project_detail["project"].id,
+        answers=answers)
+    app = proj_client.reload(app)
+    app = wait_for_app_to_active(proj_client, app.id)
+    assert app["answers"].mysqlUser == "admin1234", \
+        "incorrect answer upgrade"
+    proj_client.delete(app)
+
+
+def test_app_project_scope_deploy():
+    app_deploy = 1
+    admin_client = get_admin_client()
+    proj_client = get_project_client_for_token(
+        project_detail["project"],
+        ADMIN_TOKEN)
+    catalog = admin_client.create_projectCatalog(
+        name="projectcatalog",
+        baseType="projectCatalog",
+        branch="master",
+        url=CATALOG_URL,
+        projectId=project_detail["project"].id,
+        clusterId=project_detail["cluster"].id)
+    time.sleep(5)
+    pId = project_detail["project"].id.split(":")[1]
+    proj_external_id = "catalog://?catalog=" + pId + \
+                       "/projectcatalog&type=" \
+                       "projectCatalog&template=" \
+                       "mysql&version=0.3.8"
+    answers = get_defaut_question_answers(
+        admin_client,
+        proj_external_id)
+    app = proj_client.create_app(
+        name=random_test_name(),
+        externalId=proj_external_id,
+        answers=answers,
+        targetNamespace=project_detail["namespace"].name,
+        projectId=project_detail["project"].id)
+    app = wait_for_app_to_active(proj_client, app.id)
+    p2, ns2 = create_project_and_ns(
+        ADMIN_TOKEN,
+        project_detail["cluster"],
+        random_test_name("testapp"))
+    #Assign role
+    assign_members_to_project(admin_client,
+                              user_token[3]["user"],
+                              p2,
+                              "project-owner")
+    #Verify "project-owner" of p1 can list the added catalog
+    user1_client = get_client_for_token(user_token[1]["token"])
+    catalogs_list_user2 = user1_client.list_projectCatalog()
+    assert len(catalogs_list_user2) == 1, \
+        "Project catalog not found for the user"
+    assert catalogs_list_user2["data"][0]["name"] == \
+           "projectcatalog", "Incorrect project catalog found"
+    # Verify "project-member" of p1 can list the added catalog
+    user2_client = get_client_for_token(user_token[2]["token"])
+    catalogs_list_user2 = user2_client.list_projectCatalog()
+    assert len(catalogs_list_user2) == 1, \
+        "Project catalog not found for the user"
+    # Verify "project-owner" of p2 CANNOT list the added catalog
+    user3_client = get_client_for_token(user_token[3]["token"])
+    catalogs_list_user2 = user3_client.list_projectCatalog()
+    assert len(catalogs_list_user2) == 0, "Project catalog found for the user"
+    # Verify A standard user CANNOT list the added catalog
+    user4_client = get_client_for_token(user_token[4]["token"])
+    catalogs_list_user2 = user4_client.list_projectCatalog()
+    assert len(catalogs_list_user2) == 0, "Project catalog found for the user"
+    admin_client.delete(p2)
+
+
+@pytest.fixture(scope='module', autouse="True")
+def create_project_client(request):
+    client, clusters = get_admin_client_and_cluster()
+    client = get_admin_client()
+    clusters = client.list_cluster(name=CLUSTER_NAME).data
+    assert len(clusters) > 0
+    project_detail["project"], project_detail["namespace"] = \
+        create_project_and_ns(ADMIN_TOKEN, clusters[0],
+                              random_test_name("testapp"))
+    project_detail["cluster"] = clusters[0]
+    #create users
+    for i in range(1, 5):
+        user_token[i]["user"], user_token[i]["token"] = \
+            create_user(client)
+    #Assign roles to the users
+    assign_members_to_project(client,
+                              user_token[1]["user"],
+                              project_detail["project"],
+                              "project-owner")
+    assign_members_to_project(client,
+                              user_token[2]["user"],
+                              project_detail["project"],
+                              "project-member")
+
+    def fin():
+        client = get_admin_client()
+        client.delete(project_detail["project"])
+    request.addfinalizer(fin)
