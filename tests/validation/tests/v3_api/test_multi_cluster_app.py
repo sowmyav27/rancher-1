@@ -1,4 +1,5 @@
 import pytest
+
 from .common import *  # NOQA
 
 project = {}
@@ -236,11 +237,11 @@ def test_multi_cluster_project_answer_override():
     multiclusterapp = wait_for_mcapp_to_active(client, multiclusterapp)
     validate_multi_cluster_app_cluster(multiclusterapp)
     answers_override = {
-            "clusterId": None,
-            "projectId": project_detail["p0_id"],
-            "type": "/v3/schemas/answer",
-            "values": {
-                "mysqlUser": "test_override"}
+        "clusterId": None,
+        "projectId": project_detail["p0_id"],
+        "type": "/v3/schemas/answer",
+        "values": {
+            "mysqlUser": "test_override"}
     }
     mysql_override = []
     mysql_override.extend([{"values": answer_values}, answers_override])
@@ -373,14 +374,14 @@ def test_multi_cluster_rolling_upgrade():
     start = time.time()
     upgraded = False
     # assert apps have different states and answers
-    while time.time()-start < 30 or upgraded == False:
+    while time.time() - start < 30 or upgraded == False:
         upgraded = return_application_status_and_upgrade(
             project_client1, app1id, project_client2, app2id)
         time.sleep(.1)
     assert upgraded == True, "did not upgrade correctly"
     time.sleep(20)
     # since one has updated, asserts that both apps are in teh same state
-    while time.time()-start < 100 or upgraded == True:
+    while time.time() - start < 100 or upgraded == True:
         upgraded = return_application_status_and_upgrade(
             project_client1, app1id, project_client2, app2id)
         time.sleep(.1)
@@ -436,7 +437,7 @@ def validate_multi_cluster_app_cluster_wordpress(multiclusterapp):
     for i in range(1, len(multiclusterapp.targets)):
         app_id = multiclusterapp.targets[i].appId
         assert app_id is not None, "app_id is None"
-        project_client = project_detail["p_client"+str(i)]
+        project_client = project_detail["p_client" + str(i)]
         wait_for_app_to_active(project_client, app_id)
         validate_app_version(project_client, multiclusterapp, app_id)
         validate_response_app_endpoint(project_client, app_id)
@@ -446,7 +447,7 @@ def validate_multi_cluster_app_cluster(multiclusterapp):
     for i in range(1, len(multiclusterapp.targets)):
         app_id = multiclusterapp.targets[i].appId
         assert app_id is not None, "app_id is None"
-        project_client = project_detail["p_client"+str(i)]
+        project_client = project_detail["p_client" + str(i)]
         wait_for_app_to_active(project_client, app_id)
         validate_app_version(project_client, multiclusterapp, app_id)
 
@@ -524,7 +525,7 @@ def validate_deletion_mca(multiclusterapp):
     for i in range(0, len(multiclusterapp.targets)):
         app_id = multiclusterapp.targets[i].appId
         assert app_id is not None, "app_id is None"
-        project_client = project_detail["p_client"+str(i)]
+        project_client = project_detail["p_client" + str(i)]
         app = multiclusterapp.targets[i].projectId.split(":")
         app1id = app[1] + ":" + multiclusterapp.targets[i].appId
         validate_app_deletion(project_client, app1id)
@@ -546,7 +547,7 @@ def validate_all_answer_override_mca(multiclusterapp):
 def validate_answer_override(multiclusterapp, id,
                              answers_override, cluster=True):
     for i in range(0, len(multiclusterapp.targets)):
-        project_client = project_detail["p_client"+str(i)]
+        project_client = project_detail["p_client" + str(i)]
         app_id = multiclusterapp.targets[i].appId
         target_project_id = multiclusterapp.targets[i].projectId
         target_clusterId = target_project_id.split(":")[0]
@@ -555,7 +556,7 @@ def validate_answer_override(multiclusterapp, id,
             if target_project_id == id:
                 assert answers_override["values"]["mysqlUser"] == \
                        app_answers.get("mysqlUser"), \
-                       "Answers are not available on the expected project"
+                    "Answers are not available on the expected project"
             else:
                 assert app_answers.get("mysqlUser") == "admin", \
                     "answers should not have changed"
