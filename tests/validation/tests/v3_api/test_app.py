@@ -1,11 +1,16 @@
 from .common import *  # NOQA
 import pytest
 
-project_detail = {"project": None, "namespace": None, "cluster": None,
-                  "project2": None, "namespace2": None, "cluster2": None}
+project_detail = {"cluster1": {"project1": None, "namespace1": None,
+                               "project2": None, "namespace2": None,
+                               "cluster": None},
+                  "cluster2": {"project1": None, "namespace1": None,
+                               "project2": None, "namespace2": None,
+                               "cluster": None}}
 user_token = {"user_c1_p1_owner": {"user": None, "token": None},
               "user_c1_p1_member": {"user": None, "token": None},
               "user_c1_p2_owner": {"user": None, "token": None},
+              "user_c2_p1_owner": {"user": None, "token": None},
               "user_standard": {"user": None, "token": None}}
 
 CATALOG_URL = "https://git.rancher.io/charts"
@@ -57,7 +62,7 @@ def check_condition(condition_type, status):
     return _find_condition
 
 
-def test_tiller():
+def atest_tiller():
     name = random_test_name()
     admin_client = get_user_client()
 
@@ -117,8 +122,8 @@ def test_app_deploy():
     app = proj_client.create_app(
         name=random_test_name(),
         externalId=MYSQL_EXTERNALID_037,
-        targetNamespace=project_detail["namespace"].name,
-        projectId=project_detail["project"].id,
+        targetNamespace=project_detail["cluster1"]["namespace1"].name,
+        projectId=project_detail["cluster1"]["project1"].id,
         answers=answer)
     print("App is active")
     validate_catalog_app(proj_client, app, MYSQL_EXTERNALID_037)
@@ -137,8 +142,8 @@ def test_app_delete():
     app = proj_client.create_app(
         name=random_test_name(),
         externalId=MYSQL_EXTERNALID_037,
-        targetNamespace=project_detail["namespace"].name,
-        projectId=project_detail["project"].id,
+        targetNamespace=project_detail["cluster1"]["namespace1"].name,
+        projectId=project_detail["cluster1"]["project1"].id,
         answers=answer)
     print("App is active")
     validate_catalog_app(proj_client, app, MYSQL_EXTERNALID_037)
@@ -158,8 +163,8 @@ def test_app_upgrade_version():
     app = proj_client.create_app(
         name=random_test_name(),
         externalId=MYSQL_EXTERNALID_037,
-        targetNamespace=project_detail["namespace"].name,
-        projectId=project_detail["project"].id,
+        targetNamespace=project_detail["cluster1"]["namespace1"].name,
+        projectId=project_detail["cluster1"]["project1"].id,
         answers=answer)
     print("App is active")
     validate_catalog_app(proj_client, app, MYSQL_EXTERNALID_037)
@@ -169,8 +174,8 @@ def test_app_upgrade_version():
     app = proj_client.update(
         obj=app,
         externalId=MYSQL_EXTERNALID_038,
-        targetNamespace=project_detail["namespace"].name,
-        projectId=project_detail["project"].id,
+        targetNamespace=project_detail["cluster1"]["namespace1"].name,
+        projectId=project_detail["cluster1"]["project1"].id,
         answers=new_answer)
     app = proj_client.reload(app)
     validate_catalog_app(proj_client, app, MYSQL_EXTERNALID_038)
@@ -190,8 +195,8 @@ def test_app_rollback():
     app = proj_client.create_app(
         name=random_test_name(),
         externalId=MYSQL_EXTERNALID_037,
-        targetNamespace=project_detail["namespace"].name,
-        projectId=project_detail["project"].id,
+        targetNamespace=project_detail["cluster1"]["namespace1"].name,
+        projectId=project_detail["cluster1"]["project1"].id,
         answers=answer)
     print("App is active")
     app = validate_catalog_app(proj_client, app, MYSQL_EXTERNALID_037)
@@ -202,8 +207,8 @@ def test_app_rollback():
     app = proj_client.update(
         obj=app,
         externalId=MYSQL_EXTERNALID_038,
-        targetNamespace=project_detail["namespace"].name,
-        projectId=project_detail["project"].id,
+        targetNamespace=project_detail["cluster1"]["namespace1"].name,
+        projectId=project_detail["cluster1"]["project1"].id,
         answers=new_answer)
     app = proj_client.reload(app)
     app = validate_catalog_app(proj_client, app, MYSQL_EXTERNALID_038)
@@ -229,8 +234,8 @@ def test_app_answer_override():
     app = proj_client.create_app(
         name=random_test_name(),
         externalId=MYSQL_EXTERNALID_037,
-        targetNamespace=project_detail["namespace"].name,
-        projectId=project_detail["project"].id,
+        targetNamespace=project_detail["cluster1"]["namespace1"].name,
+        projectId=project_detail["cluster1"]["project1"].id,
         answers=answers)
     print("App is active")
     app = validate_catalog_app(proj_client, app, MYSQL_EXTERNALID_037)
@@ -238,8 +243,8 @@ def test_app_answer_override():
     app = proj_client.update(
         obj=app,
         externalId=MYSQL_EXTERNALID_037,
-        targetNamespace=project_detail["namespace"].name,
-        projectId=project_detail["project"].id,
+        targetNamespace=project_detail["cluster1"]["namespace1"].name,
+        projectId=project_detail["cluster1"]["project1"].id,
         answers=answers)
     app = proj_client.reload(app)
     app = validate_catalog_app(proj_client, app, MYSQL_EXTERNALID_037, answers)
@@ -258,9 +263,9 @@ def test_app_rbac_project_scope_deploy():
         baseType="projectCatalog",
         branch="master",
         url=CATALOG_URL,
-        projectId=project_detail["project"].id)
+        projectId=project_detail["cluster1"]["project1"].id)
     time.sleep(5)
-    pId = project_detail["project"].id.split(":")[1]
+    pId = project_detail["cluster1"]["project1"].id.split(":")[1]
     catalog_proj_scoped_ext_id = "catalog://?catalog=" + pId + \
                                  "/projectcatalog&type=" \
                                  "projectCatalog&template=" \
@@ -272,8 +277,8 @@ def test_app_rbac_project_scope_deploy():
         name=random_test_name(),
         externalId=catalog_proj_scoped_ext_id,
         answers=answers,
-        targetNamespace=project_detail["namespace"].name,
-        projectId=project_detail["project"].id)
+        targetNamespace=project_detail["cluster1"]["namespace1"].name,
+        projectId=project_detail["cluster1"]["project1"].id)
     validate_catalog_app(proj_client, app, catalog_proj_scoped_ext_id)
     p2, ns2 = create_project_and_ns(
         USER_TOKEN,
@@ -325,16 +330,16 @@ def create_project_client(request):
         create_project_and_ns(USER_TOKEN, clusters[0],
                               random_test_name("testapp"))
     project_detail["cluster"] = clusters[0]
-    #create users
+    # create users
     user_token["user_c1_p1_owner"]["user"], \
-        user_token["user_c1_p1_owner"]["token"] = create_user(client)
+    user_token["user_c1_p1_owner"]["token"] = create_user(client)
     user_token["user_c1_p1_member"]["user"], \
-        user_token["user_c1_p1_member"]["token"] = create_user(client)
+    user_token["user_c1_p1_member"]["token"] = create_user(client)
     user_token["user_c1_p2_owner"]["user"], \
-        user_token["user_c1_p2_owner"]["token"] = create_user(client)
+    user_token["user_c1_p2_owner"]["token"] = create_user(client)
     user_token["user_standard"]["user"], \
-        user_token["user_standard"]["token"] = create_user(client)
-    #Assign roles to the users
+    user_token["user_standard"]["token"] = create_user(client)
+    # Assign roles to the users
     assign_members_to_project(client,
                               user_token["user_c1_p1_owner"]["user"],
                               project_detail["project"],
