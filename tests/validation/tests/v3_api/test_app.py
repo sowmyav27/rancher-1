@@ -11,6 +11,9 @@ user_token = {"user_c1_p1_owner": {"user": None, "token": None},
               "user_c1_p1_member": {"user": None, "token": None},
               "user_c1_p2_owner": {"user": None, "token": None},
               "user_c2_p1_owner": {"user": None, "token": None},
+              "user_c1_owner": {"user": None, "token": None},
+              "user_c1_member": {"user": None, "token": None},
+              "user_c2_owner": {"user": None, "token": None},
               "user_standard": {"user": None, "token": None}}
 
 CATALOG_URL = "https://git.rancher.io/charts"
@@ -62,7 +65,7 @@ def check_condition(condition_type, status):
     return _find_condition
 
 
-def atest_tiller():
+def test_tiller():
     name = random_test_name()
     admin_client = get_user_client()
 
@@ -264,12 +267,14 @@ def test_app_rbac_project_scope_deploy():
         branch="master",
         url=CATALOG_URL,
         projectId=project_detail["cluster1"]["project1"].id)
-    time.sleep(5)
+    time.sleep(10)
+    assert catalog.state == "active", "Catalog is not in Active state."
     pId = project_detail["cluster1"]["project1"].id.split(":")[1]
     catalog_proj_scoped_ext_id = "catalog://?catalog=" + pId + \
-                                 "/projectcatalog&type=" \
-                                 "projectCatalog&template=" \
+                                 "/" + catalog.name + "&type=" \
+                                 + catalog.baseType + "&template=" \
                                  "mysql&version=0.3.8"
+    print(catalog_proj_scoped_ext_id)
     answers = get_defaut_question_answers(
         admin_client,
         catalog_proj_scoped_ext_id)
@@ -321,6 +326,79 @@ def test_app_rbac_project_scope_deploy():
     admin_client.delete(p2)
 
 
+def test_rbac_app_cluster_scope_delete():
+    admin_client = get_admin_client()
+    proj_client1 = get_project_client_for_token(
+        project_detail["cluster1"]["project1"],
+        ADMIN_TOKEN)
+    print(project_detail["cluster1"]["cluster"].id)
+    print(project_detail["cluster1"]["cluster"])
+    catalog = admin_client.create_clusterCatalog(
+        name="cluster-catalog2",
+        baseType="clustercatalog",
+        branch="master",
+        url=CATALOG_URL,
+        clusterId=project_detail["cluster1"]["cluster"].id)
+    time.sleep(10)
+    assert catalog.state == "active", "Catalog is not in Active state."
+    catalog_cluster_scoped_ext_id = \
+        "catalog://?catalog=" + \
+        project_detail["cluster1"]["cluster"].id + \
+        "/cluster-catalog2&type=clusterCatalog&template=mysql&version=0.3.8"
+    answers = get_defaut_question_answers(
+        admin_client,
+        catalog_cluster_scoped_ext_id)
+    app = proj_client1.create_app(
+        name=random_test_name(),
+        externalId=catalog_cluster_scoped_ext_id,
+        answers=answers,
+        targetNamespace=project_detail["cluster1"]["namespace1"].name,
+        projectId=project_detail["cluster1"]["project1"].id)
+    validate_catalog_app(proj_client1, app, catalog_cluster_scoped_ext_id)
+    proj_client1.delete(app)
+    validate_app_deletion(proj_client1, app.id)
+
+    # verify user_c1_p1_owner CANNOT delete the catalog
+    validate_catalog_app_deletion(catalog,
+                                  "user_c1_p1_owner", False)
+
+    # verify user_c1_p1_member CANNOT delete the catalog
+    validate_catalog_app_deletion(catalog,
+                                  "user_c1_p1_member", False)
+
+    # verify user_c1_p2_owner CANNOT delete the catalog
+    validate_catalog_app_deletion(catalog,
+                                  "user_c1_p2_owner", False)
+
+    # verify user_c2_p1_owner CANNOT delete the catalog
+    validate_catalog_app_deletion(catalog,
+                                  "user_c2_p1_owner", False)
+
+    # verify user_c1_owner CAN delete the catalog
+    validate_catalog_app_deletion(catalog,
+                                  "user_c1_owner", True)
+    catalog = admin_client.create_clusterCatalog(
+        name="cluster-catalog2",
+        baseType="clustercatalog",
+        branch="master",
+        url=CATALOG_URL,
+        clusterId=project_detail["cluster1"]["cluster"].id)
+    time.sleep(10)
+    assert catalog.state == "active", "Catalog is not in Active state."
+
+    # verify user_c1_member CANNOT delete the catalog
+    validate_catalog_app_deletion(catalog,
+                                  "user_c1_member", False)
+
+    # verify user_c2_owner CANNOT delete the catalog
+    validate_catalog_app_deletion(catalog,
+                                  "user_c2_owner", False)
+
+    # verify user_standard CANNOT delete the catalog
+    validate_catalog_app_deletion(catalog,
+                                  "user_standard", False)
+
+
 @pytest.fixture(scope='module', autouse="True")
 def create_project_client(request):
     client = get_admin_client()
@@ -339,6 +417,7 @@ def create_project_client(request):
     user_token["user_c1_p2_owner"]["token"] = create_user(client)
     user_token["user_standard"]["user"], \
     user_token["user_standard"]["token"] = create_user(client)
+
     # Assign roles to the users
     assign_members_to_project(client,
                               user_token["user_c1_p1_owner"]["user"],

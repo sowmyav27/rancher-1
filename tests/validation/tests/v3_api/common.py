@@ -1324,7 +1324,8 @@ def validate_app_deletion(client, app_id,
             break
 
 
-def validate_catalog_app(proj_client, app, external_id, answer=None):
+def validate_catalog_app(proj_client, app, external_id, answer=None,
+                         timeout=DEFAULT_TIMEOUT):
     if answer is None:
         answers = get_defaut_question_answers(get_user_client(), external_id)
     else:
@@ -1339,9 +1340,20 @@ def validate_catalog_app(proj_client, app, external_id, answer=None):
     assert len(pramaters) > 1, \
         "Incorrect list of paramaters from catalog external ID"
     chart = pramaters[len(pramaters)-2].split("=")[1] + "-" + \
-            pramaters[len(pramaters)-1].split("=")[1]
+        pramaters[len(pramaters)-1].split("=")[1]
     workloads = proj_client.list_workload(namespaceId=ns).data
+    # Wait for workloads to become Active
     for wl in workloads:
+        start = time.time()
+        while wl.state != "active":
+            print(wl.state)
+            if time.time() - start > timeout:
+                raise AssertionError(
+                    "Timed out waiting for workload to become Active")
+            time.sleep(.5)
+    # Verify Workload state and the chart version
+    for wl in workloads:
+        print(wl.state)
         assert wl.state == "active"
         assert wl.workloadLabels.chart == chart, \
             "the chart version is wrong"
