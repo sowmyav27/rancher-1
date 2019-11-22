@@ -6,7 +6,8 @@ from rancher import ApiError
 
 K8S_VERSION = os.environ.get('RANCHER_K8S_VERSION', "")
 K8S_VERSION_UPGRADE = os.environ.get('RANCHER_K8S_VERSION_UPGRADE', "")
-POD_SECURITY_POLICY_TEMPLATE = os.environ.get('RANCHER_POD_SECURITY_POLICY_TEMPLATE', "restricted")
+POD_SECURITY_POLICY_TEMPLATE = os.environ.get(
+    'RANCHER_POD_SECURITY_POLICY_TEMPLATE', "restricted")
 DO_ACCESSKEY = os.environ.get('DO_ACCESSKEY', "None")
 LINODE_ACCESSKEY = os.environ.get('RANCHER_LINODE_ACCESSKEY', "None")
 AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID")
@@ -97,22 +98,6 @@ rke_config_cis = {
                 {"enabled": True},
             "extraArgs":
                 {"anonymous-auth": False,
-                 "enable-admission-plugins": "ServiceAccount,"
-                                             "NamespaceLifecycle,"
-                                             "LimitRanger,"
-                                             "PersistentVolumeLabel,"
-                                             "DefaultStorageClass,"
-                                             "ResourceQuota,"
-                                             "DefaultTolerationSeconds,"
-                                             "AlwaysPullImages,"
-                                             "DenyEscalatingExec,"
-                                             "NodeRestriction,"
-                                             "PodSecurityPolicy,"
-                                             "MutatingAdmissionWebhook,"
-                                             "ValidatingAdmissionWebhook,"
-                                             "Priority,"
-                                             "TaintNodesByCondition,"
-                                             "PersistentVolumeClaimResize",
                  "profiling": False,
                  "service-account-lookup": True,
                  "tls-cipher-suites": "TLS_ECDHE_ECDSA_WITH_AES_"
@@ -158,6 +143,24 @@ if K8S_VERSION != "":
     rke_config_cis["kubernetesVersion"] = K8S_VERSION
 
 
+if K8S_VERSION.startswith("v1.16") or K8S_VERSION.startswith("v1.15"):
+    rke_config_cis["services"]["kubeApi"]["extraArgs"]["enable-admission-plugins"] = \
+        "ServiceAccount,NamespaceLifecycle,LimitRanger," \
+        "PersistentVolumeLabel,DefaultStorageClass," \
+        "ResourceQuota,DefaultTolerationSeconds," \
+        "AlwaysPullImages,DenyEscalatingExec," \
+        "NodeRestriction,PodSecurityPolicy," \
+        "MutatingAdmissionWebhook,ValidatingAdmissionWebhook,Priority," \
+        "TaintNodesByCondition,PersistentVolumeClaimResize,EventRateLimit"
+elif K8S_VERSION.startswith("v1.14"):
+    rke_config_cis["services"]["kubeApi"]["extraArgs"]["enable-admission-plugins"] = \
+        "ServiceAccount,NamespaceLifecycle," \
+        "LimitRanger,PersistentVolumeLabel," \
+        "DefaultStorageClass,ResourceQuota,DefaultTolerationSeconds," \
+        "AlwaysPullImages,DenyEscalatingExec,NodeRestriction," \
+        "PodSecurityPolicy,MutatingAdmissionWebhook," \
+        "ValidatingAdmissionWebhook,Priority,EventRateLimit"
+
 rke_config_aws_provider = rke_config.copy()
 rke_config_aws_provider["cloudProvider"] = {"name": "aws",
                                             "type": "cloudProvider",
@@ -192,7 +195,7 @@ def test_cis_complaint():
         ["etcd"], ["etcd"], ["etcd"],
         ["worker"], ["worker"], ["worker"]
     ]
-    client = get_admin_client()
+    client = get_user_client()
     cluster = client.create_cluster(name=evaluate_clustername(),
                                     driver="rancherKubernetesEngine",
                                     rancherKubernetesEngineConfig=
