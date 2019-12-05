@@ -193,11 +193,9 @@ def test_cis_complaint():
     #rke_config_cis
     aws_nodes = \
         AmazonWebServices().create_multiple_nodes(
-            8, random_test_name(HOST_NAME))
+            3, random_test_name(HOST_NAME))
     node_roles = [
-        ["controlplane"], ["controlplane"],
-        ["etcd"], ["etcd"], ["etcd"],
-        ["worker"], ["worker"], ["worker"]
+        ["controlplane", "etcd", "worker"]
     ]
     client = get_user_client()
     cluster = client.create_cluster(name=evaluate_clustername(),
@@ -212,8 +210,8 @@ def test_cis_complaint():
         aws_node.execute_command("sudo sysctl -w vm.overcommit_memory=1")
         aws_node.execute_command("sudo sysctl -w kernel.panic=10")
         aws_node.execute_command("sudo sysctl -w kernel.panic_on_oops=1")
-        if node_roles[i] == ["etcd"]:
-            aws_node.execute_command("sudo useradd etcd")
+        # if node_roles[i] == ["etcd"]:
+        aws_node.execute_command("sudo useradd etcd")
         docker_run_cmd = \
             get_custom_host_registration_cmd(client, cluster, node_roles[i],
                                              aws_node)
