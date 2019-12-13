@@ -195,6 +195,8 @@ def test_cis_complaint():
         AmazonWebServices().create_multiple_nodes(
             3, random_test_name(HOST_NAME))
     node_roles = [
+        ["controlplane", "etcd", "worker"],
+        ["controlplane", "etcd", "worker"],
         ["controlplane", "etcd", "worker"]
     ]
     client = get_user_client()
