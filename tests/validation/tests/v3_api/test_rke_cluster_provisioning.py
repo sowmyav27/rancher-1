@@ -2,6 +2,8 @@ from threading import Thread
 import pytest
 from .common import *  # NOQA
 from rancher import ApiError
+import multiprocessing
+from copy import deepcopy
 
 K8S_VERSION = os.environ.get('RANCHER_K8S_VERSION', "")
 K8S_VERSION_UPGRADE = os.environ.get('RANCHER_K8S_VERSION_UPGRADE', "")
@@ -17,6 +19,8 @@ worker_count = int(os.environ.get('RANCHER_STRESS_TEST_WORKER_COUNT', 1))
 HOST_NAME = os.environ.get('RANCHER_HOST_NAME', "testcustom")
 
 engine_install_url = "https://releases.rancher.com/install-docker/18.09.sh"
+K8S_VERSION_URL = "/settings/k8s-versions-current"
+cluster_list = {"cluster_list": []}
 
 rke_config = {
     "addonJobTimeout": 30,
@@ -992,3 +996,108 @@ def create_and_validate_custom_host(node_roles, random_cluster_name=False):
         i += 1
     cluster = validate_cluster(client, cluster, k8s_version=K8S_VERSION)
     return cluster, aws_nodes
+
+
+def test_kdm_changes():
+    k8s_version_url = CATTLE_API_URL + K8S_VERSION_URL
+    print(k8s_version_url)
+    head = {'Authorization': 'Bearer ' + USER_TOKEN}
+    response = requests.get(k8s_version_url, verify=False, headers=head)
+    data = response.json()
+    k8s_v = data["default"]
+    default_k8s_versions = k8s_v.split(",")
+    default_k8s_versions = ["v1.17.2-rancher1-1"]
+    plugin = ["calico"]
+    list_process=[]
+    global clusterlist
+    manager = multiprocessing.Manager()
+    clusterlist = manager.dict()
+    for k8s_version in default_k8s_versions:
+        rke_config_new = deepcopy(rke_config)
+        rke_config_new["kubernetesVersion"] = k8s_version
+        node_count = 3 * len(default_k8s_versions)
+        aws_nodes = \
+            AmazonWebServices().create_multiple_nodes(
+                node_count, random_test_name(HOST_NAME))
+        i=0
+        for plug in plugin:
+            if plug == "calico" or plug == "canal":
+                rke_config_new["network"]["options"] = {"flannel_backend_type": "vxlan"}
+            rke_config_new["network"] = {"type": "networkConfig",
+                                         "plugin": plug}
+            print(rke_config_new["network"]["plugin"])
+            print(rke_config_new["kubernetesVersion"])
+            p1 = multiprocessing.Process(target=validate_custom_cluster_kdm,
+                                         args=(rke_config_new, aws_nodes[i:i+3], clusterlist))
+            list_process.append(p1)
+            p1.start()
+            i = i+3
+    client = get_user_client()
+    for process in list_process:
+        process.join()
+    print("cluster list: ")
+    print(clusterlist)
+    # for cluster_id, cluster in clusterlist:
+    #     validate_cluster(client, cluster, intermediate_state=None)
+
+
+def test_kdm_2changes_2():
+    k8s_version_url = CATTLE_API_URL + K8S_VERSION_URL
+    print(k8s_version_url)
+    head = {'Authorization': 'Bearer ' + USER_TOKEN}
+    response = requests.get(k8s_version_url, verify=False, headers=head)
+    data = response.json()
+    k8s_v = data["default"]
+    default_k8s_versions = k8s_v.split(",")
+    default_k8s_versions = ["v1.17.2-rancher1-1"]
+    plugin = ["calico", "canal", "flannel"]
+    list_process = []
+    global clusterlist
+    manager = multiprocessing.Manager()
+    clusterlist=manager.dict()
+    for k8s_version in default_k8s_versions:
+        for plug in plugin:
+            rke_config_new = 1
+            p1 = multiprocessing.Process(target=validate_custom_cluster_kdm,
+                                         args=(rke_config_new, clusterlist))
+            list_process.append(p1)
+            p1.start()
+            # cluster = validate_custom_cluster_kdm(rke_config_new, aws_nodes[0:3])
+            # cluster_list.append(cluster)
+    client = get_user_client()
+    for process in list_process:
+        process.join()
+    print("cluster list: ")
+    print(clusterlist)
+    # for cluster in cluster_list["cluster_list"]:
+    #     validate_cluster(client, cluster, intermediate_state=None)
+
+
+def validate_custom_cluster_kdm(rke_config_new, aws_nodes, clusterlist):
+    node_roles = [["controlplane"], ["etcd"],
+                  ["worker"]]
+    print("validate function:")
+    print(rke_config_new["network"]["plugin"])
+    print(rke_config_new["kubernetesVersion"])
+    client = get_user_client()
+    cluster_name = random_name()
+    cluster = client.create_cluster(name=cluster_name,
+                                    driver="rancherKubernetesEngine",
+                                    rancherKubernetesEngineConfig=
+                                    rke_config_new)
+    assert cluster.state == "provisioning"
+    i = 0
+    for aws_node in aws_nodes:
+        docker_run_cmd = \
+            get_custom_host_registration_cmd(client, cluster, node_roles[i],
+                                             aws_node)
+        for nr in node_roles[i]:
+            aws_node.roles.append(nr)
+        aws_node.execute_command(docker_run_cmd)
+        i += 1
+    # cluster = {"id": random_num(), "test": random_test_name()}
+    key = cluster["id"]
+    print("key: ", key)
+    print("cluster: ", cluster)
+    clusterlist[key] = cluster
+    return cluster
