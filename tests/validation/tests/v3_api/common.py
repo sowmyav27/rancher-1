@@ -1684,7 +1684,7 @@ def create_catalog_external_id(catalog_name, template, version,
 
 
 def wait_for_catalog_active(client, catalog, timeout=DEFAULT_CATALOG_TIMEOUT):
-    time.sleep(.5)
+    time.sleep(2)
     catalog_data = client.list_catalog(name=catalog.name)
     print(catalog_data)
     start = time.time()
