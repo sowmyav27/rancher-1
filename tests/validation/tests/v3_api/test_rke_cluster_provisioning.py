@@ -1082,7 +1082,7 @@ def create_custom_host_from_nodes(nodes, node_roles, random_cluster_name=False, 
     client = get_user_client()
     cluster_name = random_name() if random_cluster_name \
         else evaluate_clustername()
-    
+    rke_config_windows["kubernetesVersion"] = K8S_VERSION
     if windows:
         config = rke_config_windows
     else:
