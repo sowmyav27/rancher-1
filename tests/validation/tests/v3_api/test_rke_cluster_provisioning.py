@@ -15,6 +15,7 @@ AZURE_CLIENT_SECRET = os.environ.get("AZURE_CLIENT_SECRET")
 AZURE_TENANT_ID = os.environ.get("AZURE_TENANT_ID")
 worker_count = int(os.environ.get('RANCHER_STRESS_TEST_WORKER_COUNT', 1))
 HOST_NAME = os.environ.get('RANCHER_HOST_NAME', "testcustom")
+NODE_COUNT_CIS_CLUSTER = int(os.environ.get('RANCHER_NODE_COUNT_CIS_CLUSTER', 8))
 engine_install_url = "https://releases.rancher.com/install-docker/18.09.sh"
 
 rke_config = {
@@ -288,11 +289,18 @@ if_test_edit_cluster = pytest.mark.skipif(
 
 def test_cis_complaint():
     # rke_config_cis
-    node_roles = [
-        ["controlplane"], ["controlplane"],
-        ["etcd"], ["etcd"], ["etcd"],
-        ["worker"], ["worker"], ["worker"]
-    ]
+    if NODE_COUNT_CIS_CLUSTER == 8:
+        node_roles = [
+            ["controlplane"], ["controlplane"],
+            ["etcd"], ["etcd"], ["etcd"],
+            ["worker"], ["worker"], ["worker"]
+        ]
+    elif NODE_COUNT_CIS_CLUSTER == 3:
+        node_roles = [
+            ["controlplane", "etcd", "worker"],
+            ["controlplane", "etcd", "worker"],
+            ["controlplane", "etcd", "worker"]
+        ]
     aws_nodes = \
         AmazonWebServices().create_multiple_nodes(
             len(node_roles), random_test_name(HOST_NAME))
