@@ -20,7 +20,11 @@ HOST_NAME = os.environ.get('RANCHER_HOST_NAME', "testcustom")
 
 
 def test_import_rke_cluster():
+    client, cluster, aws_nodes = create_and_validate_import_cluster()
+    cluster_cleanup(client, cluster, aws_nodes)
 
+
+def create_and_validate_import_cluster(k8s_version="", supportmatrix=False):
     client = get_user_client()
 
     # Create AWS nodes for the cluster
@@ -32,6 +36,14 @@ def test_import_rke_cluster():
     clusterfilepath = create_rke_cluster_config(aws_nodes)
     is_file = os.path.isfile(clusterfilepath)
     assert is_file
+
+    # update clusterfilepath with k8s version
+    if supportmatrix:
+        file_object = open(clusterfilepath, 'a')
+        version = "kubernetes_version: " + k8s_version
+        file_object.write(version)
+        # Close the file
+        file_object.close()
 
     # Print config file to be used for rke cluster create
     configfile = run_command("cat " + clusterfilepath)
@@ -65,8 +77,8 @@ def test_import_rke_cluster():
     # Validate the cluster
     cluster = validate_cluster(client, clusters[0],
                                check_intermediate_state=False)
-
-    cluster_cleanup(client, cluster, aws_nodes)
+    return client, cluster, aws_nodes
+    # return client, aws_nodes
 
 
 def test_generate_rke_config():

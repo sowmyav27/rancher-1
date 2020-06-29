@@ -4,6 +4,7 @@ from .test_eks_cluster import EKS_K8S_VERSIONS, create_and_validate_eks_cluster
 from .test_gke_cluster import get_gke_config, \
     create_and_validate_gke_cluster, get_gke_version_credentials
 from .test_rke_cluster_provisioning import create_and_validate_custom_host
+from .test_import_cluster import create_and_validate_import_cluster
 
 KDM_BRANCH = os.environ.get('RANCHER_KDM_BRANCH', "")
 KDM_URL = os.environ.get(
@@ -32,6 +33,11 @@ if_not_auto_deploy_aks = pytest.mark.skipif(
         os.environ.get(
             'RANCHER_TEST_DEPLOY_AKS', "False")) is False,
     reason='auto deploy AKS tests are skipped')
+if_not_auto_deploy_rke_import = pytest.mark.skipif(
+    ast.literal_eval(
+        os.environ.get(
+            'RANCHER_TEST_DEPLOY_RKE_IMPORT', "False")) is False,
+    reason='auto deploy RKE import tests are skipped')
 
 
 @if_not_auto_deploy_rke
@@ -60,6 +66,32 @@ def test_deploy_rke():
         env_details += cluster.name
         print("Successfully deployed {} with kubernetes version {}".format(
             cluster.name, k8s_version))
+
+
+@if_not_auto_deploy_rke_import
+def test_deploy_rke_import():
+    print("Deploying RKE import Clusters")
+    errors = []
+    # get rke k8s versions
+    rkecommand = "rke config --list-version -a"
+    print(rkecommand)
+    result = run_command_with_stderr(rkecommand)
+    result = result.decode('ascii')
+    print(result)
+    import_k8s_versions = result.split('\n')
+    print(import_k8s_versions)
+    list(filter(None, import_k8s_versions))
+
+    for version in import_k8s_versions:
+        if env_details != "env.RANCHER_CLUSTER_NAMES='":
+            env_details += ","
+        try:
+            print("Deploying RKE import Cluster using kubernetes version {}".format(
+                version))
+            client, cluster = create_and_validate_import_cluster(version, supportmatrix=True)
+            env_details += cluster.name
+        except Exception as e:
+            errors.append(e)
 
 
 @if_not_auto_deploy_eks
