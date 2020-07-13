@@ -25,7 +25,7 @@ CHARTMUSEUM_CHART_VERSION = '2.3.1'
 APP_TIMEOUT = 120
 CATALOG_URL = "https://github.com/rancher/integration-test-charts.git"
 BRANCH = "validation-tests"
-GRAFANA_CHART = 'chartmuseum'
+GRAFANA_CHART = 'grafana'
 GRAFANA_CHART_VERSION = 'v3.8.6'
 
 # Supplying default answers due to issue with multi-cluster app install:
