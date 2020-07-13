@@ -71,7 +71,6 @@ def check_condition(condition_type, status):
     return _find_condition
 
 
-@if_test_rbac
 def test_tiller():
     name = random_test_name()
     admin_client = get_user_client()
@@ -120,7 +119,6 @@ def test_tiller():
     admin_client.delete(p)
 
 
-@if_test_rbac
 def test_app_deploy():
     admin_client = get_user_client()
     proj_client = get_project_client_for_token(
@@ -141,7 +139,6 @@ def test_app_deploy():
     proj_client.delete(app)
 
 
-@if_test_rbac
 def test_app_delete():
     admin_client = get_user_client()
     proj_client = get_project_client_for_token(
@@ -163,7 +160,6 @@ def test_app_delete():
     validate_app_deletion(proj_client, app.id)
 
 
-@if_test_rbac
 def test_app_upgrade_version():
     admin_client = get_user_client()
     proj_client = get_project_client_for_token(
@@ -196,7 +192,6 @@ def test_app_upgrade_version():
     proj_client.delete(app)
 
 
-@if_test_rbac
 def test_app_rollback():
     admin_client = get_user_client()
     proj_client = get_project_client_for_token(
@@ -236,7 +231,6 @@ def test_app_rollback():
     proj_client.delete(app)
 
 
-@if_test_rbac
 def test_app_answer_override():
     admin_client = get_user_client()
     proj_client = get_project_client_for_token(
@@ -266,6 +260,71 @@ def test_app_answer_override():
     assert app["answers"].mysqlUser == "admin1234", \
         "incorrect answer upgrade"
     proj_client.delete(app)
+
+
+def test_app_disable_catalog():
+    # deploy an app
+    client = get_user_client()
+    proj_client = get_project_client_for_token(
+        project_detail["cluster1"]["project1"],
+        USER_TOKEN
+    )
+    answer = get_defaut_question_answers(client, MYSQL_EXTERNALID_131)
+    wait_for_template_to_be_created(client, "library")
+    app = proj_client.create_app(
+        name=random_test_name(),
+        externalId=MYSQL_EXTERNALID_131,
+        targetNamespace=project_detail["cluster1"]["namespace1"].name,
+        projectId=project_detail["cluster1"]["project1"].id,
+        answers=answer)
+    wait_for_app_to_active(proj_client, app.id, DEFAULT_TIMEOUT)
+    validate_catalog_app(proj_client, app, MYSQL_EXTERNALID_131)
+    proj_client.delete(app)
+
+    # delete catalog
+    admin_client = get_admin_client()
+    catalog = admin_client.list_catalog(name=CATALOG_NAME)
+    admin_client.delete(catalog)
+
+    # user should not be able to deploy app
+    with pytest.raises(ApiError) as e:
+        app1 = proj_client.create_app(
+            name=random_test_name(),
+            externalId=MYSQL_EXTERNALID_131,
+            targetNamespace=project_detail["cluster1"]["namespace1"].name,
+            projectId=project_detail["cluster1"]["project1"].id,
+            answers=answer)
+    assert e.value.error.status == 500
+    assert e.value.error.code == 'ServerError'
+
+    # add catalog
+    catalog = admin_client.create_catalog(
+        name=CATALOG_NAME,
+        baseType="catalog",
+        branch=BRANCH,
+        kind="helm",
+        url=CATALOG_URL)
+    time.sleep(5)
+
+    # User should be able to deploy app
+    app1 = proj_client.create_app(
+        name=random_test_name(),
+        externalId=MYSQL_EXTERNALID_131,
+        targetNamespace=project_detail["cluster1"]["namespace1"].name,
+        projectId=project_detail["cluster1"]["project1"].id,
+        answers=answer)
+    wait_for_app_to_active(proj_client, app1.id, DEFAULT_TIMEOUT)
+
+    # User should be able to upgrade exsting app
+    app = proj_client.update(
+        obj=app,
+        externalId=MYSQL_EXTERNALID_132,
+        targetNamespace=project_detail["cluster1"]["namespace1"].name,
+        projectId=project_detail["cluster1"]["project1"].id,
+        answers=answer)
+    wait_for_app_to_active(proj_client, app1.id, DEFAULT_TIMEOUT)
+    proj_client.delete(app)
+    proj_client.delete(app1)
 
 
 @if_test_rbac
@@ -566,6 +625,68 @@ def test_rbac_app_cluster_scope_delete_8():
 
 @pytest.fixture(scope='module', autouse="True")
 def create_project_client(request):
+    cluster_list = []
+    client, cluster_existing = get_user_client_and_cluster()
+    admin_client = get_admin_client()
+    cluster_list.append(cluster_existing)
+    assert len(cluster_list) > 0
+    project_detail["cluster1"]["project1"], \
+        project_detail["cluster1"]["namespace1"] = \
+        create_project_and_ns(USER_TOKEN,
+                              cluster_list[0],
+                              random_test_name("testapp"))
+    project_detail["cluster1"]["project2"], \
+        project_detail["cluster1"]["namespace2"] = \
+        create_project_and_ns(USER_TOKEN,
+                              cluster_list[0],
+                              random_test_name("testapp"))
+
+    project_detail["cluster1"]["cluster"] = cluster_list[0]
+
+    catalog = admin_client.create_catalog(
+        name=CATALOG_NAME,
+        baseType="catalog",
+        branch=BRANCH,
+        kind="helm",
+        url=CATALOG_URL)
+    time.sleep(5)
+
+    if if_test_rbac:
+        cluster, aws_nodes = create_setup(cluster_list, admin_client)
+
+    def fin():
+        admin_client.delete(project_detail["cluster1"]["project2"])
+        admin_client.delete(catalog)
+        if if_test_rbac:
+            admin_client.delete(project_detail["cluster2"]["project1"])
+        admin_client.delete(user_token["user_c1_p2_owner"]["user"])
+        admin_client.delete(user_token["user_c2_p1_owner"]["user"])
+        admin_client.delete(user_token["user_c2_owner"]["user"])
+        admin_client.delete(user_token["user_standard"]["user"])
+        admin_client.delete(cluster)
+        if aws_nodes is not None:
+            delete_node(aws_nodes)
+
+    request.addfinalizer(fin)
+
+
+def create_setup(cluster_list, admin_client):
+    # create a cluster
+    node_roles = [["controlplane", "etcd", "worker"],
+                  ["worker"], ["worker"]]
+    cluster, aws_nodes = create_and_validate_custom_host(node_roles, True)
+    cluster_list.append(cluster)
+    assert len(cluster_list) > 1
+    project_detail["cluster2"]["project1"], \
+    project_detail["cluster2"]["namespace1"] = \
+        create_project_and_ns(USER_TOKEN,
+                              cluster_list[1],
+                              random_test_name("testapp"))
+    project_detail["cluster2"]["cluster"] = cluster_list[1]
+    user_c_client = get_cluster_client_for_token(cluster_list[0], USER_TOKEN)
+    project_detail["cluster1"]["project1"] = rbac_data["project"]
+    project_detail["cluster1"]["namespace1"] = \
+        create_ns(user_c_client, cluster_list[0], rbac_data["project"])
     user_token["user_c1_p1_owner"]["user"] = \
         rbac_data["users"][PROJECT_OWNER]["user"]
     user_token["user_c1_p1_owner"]["token"] = \
@@ -582,52 +703,15 @@ def create_project_client(request):
         rbac_data["users"][CLUSTER_MEMBER]["user"]
     user_token["user_c1_member"]["token"] = \
         rbac_data["users"][CLUSTER_MEMBER]["token"]
-    # create a cluster
-    node_roles = [["controlplane", "etcd", "worker"],
-                  ["worker"], ["worker"]]
-    cluster_list = []
-    cluster, aws_nodes = create_and_validate_custom_host(node_roles, True)
-    client, cluster_existing = get_user_client_and_cluster()
-    admin_client = get_admin_client()
-    cluster_list.append(cluster_existing)
-    cluster_list.append(cluster)
-    assert len(cluster_list) > 1
-
-    project_detail["cluster1"]["project2"], \
-    project_detail["cluster1"]["namespace2"] = \
-        create_project_and_ns(USER_TOKEN,
-                              cluster_list[0],
-                              random_test_name("testapp"))
-    project_detail["cluster2"]["project1"], \
-        project_detail["cluster2"]["namespace1"] = \
-        create_project_and_ns(USER_TOKEN,
-                              cluster_list[1],
-                              random_test_name("testapp"))
-    project_detail["cluster1"]["cluster"] = cluster_list[0]
-    project_detail["cluster2"]["cluster"] = cluster_list[1]
-
-    catalog = admin_client.create_catalog(
-        name=CATALOG_NAME,
-        baseType="catalog",
-        branch=BRANCH,
-        kind="helm",
-        url=CATALOG_URL)
-    time.sleep(5)
-
-    user_c_client = get_cluster_client_for_token(cluster_list[0], USER_TOKEN)
-    project_detail["cluster1"]["project1"] = rbac_data["project"]
-    project_detail["cluster1"]["namespace1"] = \
-        create_ns(user_c_client, cluster_list[0], rbac_data["project"])
-
     # create users
     user_token["user_c1_p2_owner"]["user"], \
-        user_token["user_c1_p2_owner"]["token"] = create_user(admin_client)
+    user_token["user_c1_p2_owner"]["token"] = create_user(admin_client)
     user_token["user_c2_p1_owner"]["user"], \
-        user_token["user_c2_p1_owner"]["token"] = create_user(admin_client)
+    user_token["user_c2_p1_owner"]["token"] = create_user(admin_client)
     user_token["user_c2_owner"]["user"], \
-        user_token["user_c2_owner"]["token"] = create_user(admin_client)
+    user_token["user_c2_owner"]["token"] = create_user(admin_client)
     user_token["user_standard"]["user"], \
-        user_token["user_standard"]["token"] = create_user(admin_client)
+    user_token["user_standard"]["token"] = create_user(admin_client)
 
     # Assign roles to the users
     assign_members_to_project(admin_client,
@@ -642,20 +726,7 @@ def create_project_client(request):
                               user_token["user_c2_owner"]["user"],
                               project_detail["cluster2"]["cluster"],
                               "cluster-owner")
-
-    def fin():
-        admin_client.delete(project_detail["cluster1"]["project2"])
-        admin_client.delete(project_detail["cluster2"]["project1"])
-        admin_client.delete(catalog)
-        admin_client.delete(user_token["user_c1_p2_owner"]["user"])
-        admin_client.delete(user_token["user_c2_p1_owner"]["user"])
-        admin_client.delete(user_token["user_c2_owner"]["user"])
-        admin_client.delete(user_token["user_standard"]["user"])
-        admin_client.delete(cluster)
-        if aws_nodes is not None:
-            delete_node(aws_nodes)
-
-    request.addfinalizer(fin)
+    return cluster, aws_nodes
 
 
 def validate_user_list_catalog(user, listcatalog=True, clustercatalog=True):
