@@ -12,3 +12,51 @@ nodes:
     internal_address: $internalIp3
     user: $user3
     role: [etcd, controlplane,worker]
+network:
+    plugin: weave
+    weave_network_provider:
+        password: "Q]SZOQ5wp@n$oijz"
+services:
+#    backup_config:
+#      enabled: true     # enables recurring etcd snapshots
+#      interval_hours: 6 # time increment between snapshots
+#      retention: 60     # time in days before snapshot purge
+  kubelet:
+    extra_args:
+      authorization-mode: "Webhook"
+      streaming-connection-idle-timeout: "30m"
+      protect-kernel-defaults: "true"
+      make-iptables-util-chains: "true"
+      event-qps: "0"
+      anonymous-auth: "false"
+      feature-gates: "RotateKubeletServerCertificate=true"
+      tls-cipher-suites: "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_RSA_WITH_AES_256_GCM_SHA384,TLS_RSA_WITH_AES_128_GCM_SHA256"
+  kube-api:
+    pod_security_policy: true
+    extra_args:
+      anonymous-auth: "false"
+      profiling: "false"
+      service-account-lookup: "true"
+      enable-admission-plugins: "ServiceAccount,NamespaceLifecycle,LimitRanger,PersistentVolumeLabel,DefaultStorageClass,ResourceQuota,DefaultTolerationSeconds,AlwaysPullImages,DenyEscalatingExec,NodeRestriction,EventRateLimit,PodSecurityPolicy"
+      encryption-provider-config: /opt/kubernetes/encryption.yaml
+      admission-control-config-file: "/opt/kubernetes/admission.yaml"
+      audit-log-path: "/var/log/kube-audit/audit-log.json"
+      audit-log-maxage: "5"
+      audit-log-maxbackup: "5"
+      audit-log-maxsize: "100"
+      audit-log-format: "json"
+      audit-policy-file: /opt/kubernetes/audit.yaml
+      tls-cipher-suites: "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_RSA_WITH_AES_256_GCM_SHA384,TLS_RSA_WITH_AES_128_GCM_SHA256"
+    extra_binds:
+      - "/vol1/custom/log/kubernetes/kube-audit:/var/log/kube-audit"
+      - "/vol1/k8s/kubernetes:/opt/kubernetes"
+  scheduler:
+    extra_args:
+      address: "127.0.0.1"
+      profiling: "false"
+  kube-controller:
+    extra_args:
+      address: "127.0.0.1"
+      profiling: "false"
+      terminated-pod-gc-threshold: "1000"
+      feature-gates: "RotateKubeletServerCertificate=true"

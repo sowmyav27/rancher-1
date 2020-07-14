@@ -27,7 +27,7 @@ RANCHER_PRIVATE_CA_CERT = os.environ.get("RANCHER_PRIVATE_CA_CERT")
 RANCHER_LOCAL_CLUSTER_TYPE = os.environ.get("RANCHER_LOCAL_CLUSTER_TYPE")
 RANCHER_ADD_CUSTOM_CLUSTER = os.environ.get("RANCHER_ADD_CUSTOM_CLUSTER",
                                             "True")
-
+rkestate_path = DATA_SUBDIR + "/cluster-ha-filled.rkestate"
 kubeconfig_path = DATA_SUBDIR + "/kube_config_cluster-ha-filled.yml"
 export_cmd = "export KUBECONFIG=" + kubeconfig_path
 
@@ -95,6 +95,7 @@ def test_install_rancher_ha(precheck_certificate_options):
     install_rancher()
     wait_for_status_code(url=RANCHER_SERVER_URL + "/v3", expected_code=401)
     print_kubeconfig()
+    print_rkestate()
     auth_url = \
         RANCHER_SERVER_URL + "/v3-public/localproviders/local?action=login"
     wait_for_status_code(url=auth_url, expected_code=200)
@@ -321,6 +322,14 @@ def print_kubeconfig():
         kubeconfig_contents.encode("utf-8")).decode("utf-8")
     print("\n\n" + kubeconfig_contents + "\n\n")
     print("\nBase64 encoded: \n\n" + kubeconfig_contents_encoded + "\n\n")
+
+
+def print_rkestate():
+    rkestatefile = open(rkestate_path, "r")
+    rkestate_contents = rkestatefile.read()
+    rkestatefile.close()
+    print("rkestatefile_contents: ")
+    print("\n\n" + rkestate_contents + "\n\n")
 
 
 def create_rke_cluster_config(aws_nodes):
