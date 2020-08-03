@@ -71,6 +71,7 @@ def test_install_rancher_ha(precheck_certificate_options):
             nodes = create_resources()
             config_path = create_rke_cluster_config(nodes)
             create_rke_cluster(config_path)
+
         elif RANCHER_LOCAL_CLUSTER_TYPE == "K3S":
             print("K3S cluster is provisioning for the local cluster")
             k3s_kubeconfig_path = \
@@ -101,12 +102,13 @@ def test_install_rancher_ha(precheck_certificate_options):
     except Exception as e:
         print("Error: {0}".format(e))
         assert False, "check the logs in console for details"
-
+    print_kubeconfig()
     if cm_install:
         install_cert_manager()
     add_repo_create_namespace()
     # Here we use helm to install the Rancher chart
     install_rancher(extra_settings=extra_settings)
+
     if RANCHER_LOCAL_CLUSTER_TYPE == "EKS":
         # For EKS we need to wait for EKS to generate the nlb and then configure
         # a Route53 record with the ingress address value
