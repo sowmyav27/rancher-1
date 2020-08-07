@@ -631,3 +631,13 @@ class AmazonWebServices(CloudProviderBase):
             status = cluster['status']
             print(status)
         return cluster
+
+
+    def describe_eks_nodegroup(self, cluster_name,nodegroup_name):
+        try:
+            return self._eks_client.describe_nodegroup(
+                clusterName=cluster_name,
+                nodegroupName=nodegroup_name
+            )
+        except ClientError:
+            return None

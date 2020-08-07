@@ -1,7 +1,10 @@
 import os
 from .common import get_user_client, validate_cluster, \
-    random_test_name, AWS_SSH_KEY_NAME
+    random_test_name, AWS_SSH_KEY_NAME, wait_for_cluster_delete, get_user_client_and_cluster, get_admin_client
+from .test_rke_cluster_provisioning import rke_config
+from lib.aws import AmazonWebServices
 import pytest
+import time
 
 EKS_ACCESS_KEY = os.environ.get('RANCHER_EKS_ACCESS_KEY', "")
 EKS_SECRET_KEY = os.environ.get('RANCHER_EKS_SECRET_KEY', "")
@@ -19,6 +22,8 @@ EKS_PUBLIC_ACCESS_SOURCES = \
 ekscredential = pytest.mark.skipif(not (EKS_ACCESS_KEY and EKS_SECRET_KEY),
                                    reason='EKS Credentials not provided, '
                                           'cannot create cluster')
+ADMIN_USER = os.environ.get('RANCHER_ADMIN_USER', "")
+CLUSTER_NAME = os.environ.get('RANCHER_CLUSTER_NAME', "")
 DEFAULT_TIMEOUT_EKS = 1200
 
 cluster_details = {}
@@ -37,7 +42,6 @@ eks_config = {
             "instanceType": "t3.medium",
             "maxSize": EKS_NODESIZE,
             "minSize": EKS_NODESIZE,
-            "nodegroupName": random_test_name("test-ng"),
             "type": "nodeGroup"
         }]
     }
@@ -48,9 +52,14 @@ def test_create_hosted_eks_cluster_1():
     ec2_cloud_credential = get_aws_cloud_credential()
     cluster_name = random_test_name("test-auto-eks")
     global eks_config
+    nodegroup = get_new_node()
     eks_config_temp = eks_config.copy()
     eks_config_temp["displayName"] = cluster_name
     eks_config_temp["amazonCredentialSecret"] = ec2_cloud_credential.id
+    eks_config_temp["nodeGroups"] = []
+    eks_config_temp["nodeGroups"].append(nodegroup)
+    print(eks_config_temp)
+
     cluster_config = {
         "eksConfig": eks_config_temp,
         "name": cluster_name,
@@ -61,32 +70,14 @@ def test_create_hosted_eks_cluster_1():
         "enableClusterMonitoring": False
     }
     create_and_validate_eks_cluster(cluster_config)
+    validate_eks_cluster(cluster_name, eks_config_temp)
 
 
 @ekscredential
 def test_create_hosted_eks_cluster_2():
-    ec2_cloud_credential = get_aws_cloud_credential()
     cluster_name = random_test_name("test-auto-eks")
-    global eks_config
-    public_access = [] if EKS_PUBLIC_ACCESS_SOURCES \
-                          is None else EKS_PUBLIC_ACCESS_SOURCES.split(",")
-    eks_config_temp = eks_config.copy()
-    eks_config_temp["displayName"] = cluster_name
-    eks_config_temp["amazonCredentialSecret"] = ec2_cloud_credential.id
-    eks_config_temp["kmsKey"] = KMS_KEY
-    eks_config_temp["secretsEncryption"] = SECRET_ENCRYPTION
-    eks_config_temp["subnets"] = [] \
-        if EKS_SUBNETS is None else EKS_SUBNETS.split(",")
-    eks_config_temp["securityGroups"] = [] \
-        if EKS_SECURITYGROUP is None else EKS_SECURITYGROUP.split(",")
-    eks_config_temp["publicAccessSources"] = public_access
-    eks_config_temp["tags"] = {"cluster-level": "tag1"}
-    eks_config_temp["nodeGroups"][0]["tags"] = \
-        {"nodegroup-level": "tag1", "nodegroup-level": "tag2"}
-    eks_config_temp["nodeGroups"][0]["labels"] = {"label1": "value1"}
-    eks_config_temp["loggingTypes"] = get_logging_types()
-    eks_config_temp["serviceRole"] = EKS_SERVICE_ROLE
-    eks_config_temp["ec2SshKey"] = AWS_SSH_KEY_NAME
+    eks_config_temp = get_eks_config_all(cluster_name)
+
     cluster_config = {
         "eksConfig": eks_config_temp,
         "name": cluster_name,
@@ -97,6 +88,45 @@ def test_create_hosted_eks_cluster_2():
         "enableClusterMonitoring": False
     }
     create_and_validate_eks_cluster(cluster_config)
+    validate_eks_cluster(cluster_name, eks_config_temp, all_parameters=True)
+
+
+@ekscredential
+def test_create_hosted_eks_cluster_3():
+    cluster_name = random_test_name("test-auto-eks")
+    eks_config_temp = get_eks_config_all(cluster_name)
+    cluster_config = {
+        "eksConfig": eks_config_temp,
+        "name": cluster_name,
+        "type": "cluster",
+        "dockerRootDir": "/var/lib/docker",
+        "enableNetworkPolicy": False,
+        "enableClusterAlerting": False,
+        "enableClusterMonitoring": False
+    }
+    client, cluster = create_and_validate_eks_cluster(cluster_config)
+    # edit cluster
+    cluster = edit_eks_cluster(cluster, eks_config_temp)
+
+
+
+@ekscredential
+def test_create_hosted_eks_cluster_4():
+    cluster_name = random_test_name("test-auto-eks")
+    eks_config_temp = get_eks_config_all(cluster_name)
+    cluster_config = {
+        "eksConfig": eks_config_temp,
+        "name": cluster_name,
+        "type": "cluster",
+        "dockerRootDir": "/var/lib/docker",
+        "enableNetworkPolicy": False,
+        "enableClusterAlerting": False,
+        "enableClusterMonitoring": False
+    }
+    client, cluster = create_and_validate_eks_cluster(cluster_config)
+    # delete cluster
+    client.delete(cluster)
+    wait_for_cluster_delete(client, cluster)
 
 
 @pytest.fixture(scope='module', autouse="True")
@@ -142,3 +172,202 @@ def get_logging_types():
         for logging in temp:
             logging_types.append(logging)
     return logging_types
+
+
+def get_eks_config_all(cluster_name):
+    ec2_cloud_credential = get_aws_cloud_credential()
+    global eks_config
+    public_access = [] if EKS_PUBLIC_ACCESS_SOURCES \
+                          is None else EKS_PUBLIC_ACCESS_SOURCES.split(",")
+    eks_config_temp = eks_config.copy()
+    eks_config_temp["displayName"] = cluster_name
+    eks_config_temp["amazonCredentialSecret"] = ec2_cloud_credential.id
+    if KMS_KEY is not None: eks_config_temp["kmsKey"] = KMS_KEY
+    if SECRET_ENCRYPTION: eks_config_temp["secretsEncryption"] = SECRET_ENCRYPTION
+    eks_config_temp["subnets"] = [] \
+        if EKS_SUBNETS is None else EKS_SUBNETS.split(",")
+    eks_config_temp["securityGroups"] = [] \
+        if EKS_SECURITYGROUP is None else EKS_SECURITYGROUP.split(",")
+    eks_config_temp["publicAccessSources"] = public_access
+    eks_config_temp["tags"] = {"cluster-level": "tag1"}
+    eks_config_temp["nodeGroups"] = []
+    eks_config_temp["nodeGroups"].append(get_new_node())
+    eks_config_temp["nodeGroups"][0]["tags"] = \
+        {"nodegroup-level": "tag1", "nodegroup-level": "tag2"}
+    eks_config_temp["nodeGroups"][0]["labels"] = {"label1": "value1"}
+    eks_config_temp["loggingTypes"] = get_logging_types()
+    eks_config_temp["serviceRole"] = EKS_SERVICE_ROLE
+    eks_config_temp["ec2SshKey"] = AWS_SSH_KEY_NAME
+    return eks_config_temp
+
+
+def get_new_node():
+    new_nodegroup = {
+        "desiredSize": EKS_NODESIZE,
+        "diskSize": 20,
+        "gpu": False,
+        "instanceType": "t3.medium",
+        "maxSize": EKS_NODESIZE,
+        "minSize": EKS_NODESIZE,
+        "nodegroupName": random_test_name("test-ng2"),
+        "type": "nodeGroup"
+    }
+    return new_nodegroup
+
+
+def validate_eks_cluster(cluster_name, eks_config_temp, all_parameters=False):
+    eks_cluster = AmazonWebServices().describe_eks_cluster(cluster_name)
+    print("\nEKS cluster deployed in EKS Console: {}".format(eks_cluster["cluster"]))
+    assert eks_cluster["cluster"]["version"] == eks_config["kubernetesVersion"], \
+        "K8s version is incorrect"
+    assert eks_cluster["cluster"]["status"] == "ACTIVE", "Cluster is NOT in active state"
+    nodegroups = eks_config["nodeGroups"]
+    for nodegroup in nodegroups:
+        print("nodegroup:", nodegroup)
+        eks_nodegroup = AmazonWebServices().describe_eks_nodegroup(
+            cluster_name, nodegroup["nodegroupName"]
+        )
+        print("\nNode Group from EKS console: {}".format(eks_nodegroup))
+    if all_parameters:
+        # check if security groups, subnets are the same
+        if EKS_SECURITYGROUP is not None:
+            eks_cluster["cluster"]["resourcesVpcConfig"]["securityGroupIds"].sort()
+            eks_config_temp["securityGroups"].sort()
+            assert eks_cluster["cluster"]["resourcesVpcConfig"]["securityGroupIds"] == \
+                   eks_config_temp["securityGroups"] , "Mismatch in Security Groups"
+        if EKS_SUBNETS is not None:
+            eks_config_temp["subnets"].sort()
+            eks_cluster["cluster"]["resourcesVpcConfig"]["subnetIds"].sort()
+            assert eks_cluster["cluster"]["resourcesVpcConfig"]["subnetIds"] == \
+                   eks_config_temp["subnets"], "Mismatch in Security Groups"
+
+        # verify logging types
+        if LOGGING_TYPES is not None:
+            assert eks_cluster["cluster"]["logging"]["clusterLogging"]["types"] == \
+                   eks_config["cluster"]["loggingTypes"] , "Mismatch in Logging types set"
+
+
+def edit_eks_cluster(cluster, eks_config_temp):
+    # edit eks_config_temp
+    # add new cloud cred
+    ec2_cloud_credential_new = get_aws_cloud_credential()
+    eks_config_temp["amazonCredentialSecret"] = ec2_cloud_credential_new.id
+
+    # add cluster level tags
+    eks_config_temp["tags"]["cluster-level-2"] = "tag2"
+
+    # add node group
+    new_nodegroup = get_new_node()
+    eks_config_temp["nodeGroups"].append(new_nodegroup)
+
+    # remove all logging
+    eks_config_temp["loggingTypes"] = []
+    client = get_user_client()
+    client.update(cluster, eksConfig=eks_config_temp)
+    cluster = validate_cluster(client, cluster, intermediate_state="updating",
+                               check_intermediate_state=True,
+                               skipIngresscheck=True,
+                               timeout=DEFAULT_TIMEOUT_EKS)
+    return cluster
+
+
+
+def test_crb():
+    client = get_admin_client()
+    for i in range(0,200):
+        cluster = client.create_cluster(name=random_test_name("cluster"),
+                                        driver="rancherKubernetesEngine",
+                                        rancherKubernetesEngineConfig=
+                                        rke_config)
+    clusters = client.list_cluster().data
+    print("cluster:",clusters)
+    for cluster in clusters:
+        for i in range(0,4000):
+             # create role template
+            role_temp = client.create_role_template(name=random_test_name("role"),
+                                                    context="cluster",
+                                                    rules=[{"type": "policyRule", "verbs": ["create", "delete", "get", "list"], "apiGroups": ["*"], "resources": ["nodes"]}])
+
+            time.sleep(.5)
+            crtb = client.create_cluster_role_template_binding(
+                clusterId=cluster.id,
+                roleTemplateId=role_temp.id,
+                subjectKind="User",
+                userId=ADMIN_USER)
+
+def test_2_crb():
+    client = get_admin_client()
+    clusters = client.list_cluster().data
+    print("cluster:",clusters)
+    for cluster in clusters:
+        for i in range(0,4000):
+             # create role template
+            role_temp = client.create_role_template(name=random_test_name("role"),
+                                                    context="cluster",
+                                                    rules=[{"type": "policyRule", "verbs": ["create", "delete", "get", "list"], "apiGroups": ["*"], "resources": ["nodes"]}])
+
+            time.sleep(.5)
+            crtb = client.create_cluster_role_template_binding(
+                clusterId=cluster.id,
+                roleTemplateId=role_temp.id,
+                subjectKind="User",
+                userId=ADMIN_USER)
+
+
+def test_3_crb():
+    client = get_admin_client()
+    for i in range(0,200):
+        cluster = client.create_cluster(name=random_test_name("cluster"),
+                                        driver="rancherKubernetesEngine",
+                                        rancherKubernetesEngineConfig=
+                                        rke_config)
+    clusters = client.list_cluster().data
+    for cluster in clusters:
+        for i in range(0,200):
+             # create role template
+            role_temp = client.create_role_template(name=random_test_name("role"),
+                                                    context="cluster",
+                                                    rules=[{"type": "policyRule", "verbs": ["create", "delete", "get", "list"], "apiGroups": ["*"], "resources": ["nodes"]}])
+
+            time.sleep(.5)
+            crtb = client.create_cluster_role_template_binding(
+                clusterId=cluster.id,
+                roleTemplateId=role_temp.id,
+                subjectKind="User",
+                userId=ADMIN_USER)
+
+
+def test_4_crb():
+    client = get_admin_client()
+    clusters = client.list_cluster().data
+    for cluster in clusters:
+        for i in range(0,200):
+             # create role template
+            role_temp = client.create_role_template(name=random_test_name("role"),
+                                                    context="cluster",
+                                                    rules=[{"type": "policyRule", "verbs": ["create", "delete", "get", "list"], "apiGroups": ["*"], "resources": ["nodes"]}])
+
+            time.sleep(.5)
+            crtb = client.create_cluster_role_template_binding(
+                clusterId=cluster.id,
+                roleTemplateId=role_temp.id,
+                subjectKind="User",
+                userId=ADMIN_USER)
+
+
+def test_5_crb():
+    client = get_admin_client()
+    clusters = client.list_cluster(name=CLUSTER_NAME).data
+    for cluster in clusters:
+        for i in range(0,3000):
+             # create role template
+            role_temp = client.create_role_template(name=random_test_name("role"),
+                                                    context="cluster",
+                                                    rules=[{"type": "policyRule", "verbs": ["create", "delete", "get", "list"], "apiGroups": ["*"], "resources": ["nodes"]}])
+
+            time.sleep(.5)
+            crtb = client.create_cluster_role_template_binding(
+                clusterId=cluster.id,
+                roleTemplateId=role_temp.id,
+                subjectKind="User",
+                userId=ADMIN_USER)
