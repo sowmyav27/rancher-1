@@ -6,6 +6,7 @@ from .common import  wait_for_cluster_delete
 from .test_create_ha import resource_prefix
 from lib.aws import AmazonWebServices
 import pytest
+import time
 
 EKS_ACCESS_KEY = os.environ.get('RANCHER_EKS_ACCESS_KEY', "")
 EKS_SECRET_KEY = os.environ.get('RANCHER_EKS_SECRET_KEY', "")
