@@ -271,6 +271,21 @@ class AmazonWebServices(CloudProviderBase):
             node = self.wait_for_node_state(node, 'terminated')
         return node
 
+    def delete_eks_cluster(self, cluster_name):
+        ng_names = self._eks_client.list_nodegroups(clusterName=cluster_name)
+        for node_group in ng_names['nodegroups']:
+            print("Deleting node group: " + node_group)
+            delete_ng_response = self._eks_client.delete_nodegroup(
+                                                    clusterName=cluster_name,
+                                                    nodegroupName=node_group)
+        waiter_ng = self._eks_client.get_waiter('nodegroup_deleted')
+        for node_group in ng_names['nodegroups']:
+            print("Waiting for deletion of: " + node_group)
+            waiter_ng.wait(clusterName=cluster_name, nodegroupName=node_group)
+        print("Deleting cluster: "+ cluster_name)
+        delete_response = self._eks_client.delete_cluster(name=cluster_name)
+        return delete_response
+
     def wait_for_node_state(self, node, state='running'):
         # 'running', 'stopped', 'terminated'
         timeout = 300
@@ -614,6 +629,15 @@ class AmazonWebServices(CloudProviderBase):
     def describe_eks_cluster(self, name):
         try:
             return self._eks_client.describe_cluster(name=name)
+        except ClientError:
+            return None
+
+    def describe_eks_nodegroup(self, cluster_name, nodegroup_name):
+        try:
+            return self._eks_client.describe_nodegroup(
+                clusterName=cluster_name,
+                nodegroupName=nodegroup_name
+            )
         except ClientError:
             return None
 
