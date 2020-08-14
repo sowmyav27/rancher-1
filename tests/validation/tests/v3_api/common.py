@@ -1065,8 +1065,11 @@ def validate_dns_record_deleted(client, dns_record, timeout=DEFAULT_TIMEOUT):
 
 
 def wait_for_nodes_to_become_active(client, cluster, exception_list=[],
-                                    retry_count=0):
+                                    retry_count=0,expected_node_count=0):
     nodes = client.list_node(clusterId=cluster.id).data
+    if expected_node_count != 0:
+        assert len(nodes) == expected_node_count, \
+            "Incorrect number of nodes registered in cluster"
     node_auto_deleted = False
     for node in nodes:
         if node.requestedHostname not in exception_list:
@@ -1365,7 +1368,8 @@ def validate_cluster_state(client, cluster,
                            check_intermediate_state=True,
                            intermediate_state="provisioning",
                            nodes_not_in_active_state=[],
-                           timeout=MACHINE_TIMEOUT):
+                           timeout=MACHINE_TIMEOUT,
+                           expected_node_count=0):
     start_time = time.time()
     if check_intermediate_state:
         cluster = wait_for_condition(
@@ -1381,7 +1385,8 @@ def validate_cluster_state(client, cluster,
         timeout=timeout)
     assert cluster.state == "active"
     wait_for_nodes_to_become_active(client, cluster,
-                                    exception_list=nodes_not_in_active_state)
+                                    exception_list=nodes_not_in_active_state,
+                                    expected_node_count=expected_node_count)
     timeout = 60
     start = time.time()
     while "version" not in cluster.keys():
