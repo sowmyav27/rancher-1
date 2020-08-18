@@ -112,19 +112,36 @@ if ( true == via_webhook() && (!(rancher_version ==~ rancher_version_regex)) ) {
               try {
                 stage('Deploy Rancher server 1') {
                   try {
+                    if(env.CATTLE_TEST_URL || env.ADMIN_TOKEN || env.USER_TOKEN) {
+                      echo "========= VARIABLES EXIST =========="
+                      echo "${CATTLE_TEST_URL}"
+                      echo "${ADMIN_TOKEN}"
+                      echo "${USER_TOKEN}"
+                      print env.CATTLE_TEST_URL
+                      print env.ADMIN_TOKEN
+                      print env.USER_TOKEN
+                    }
+                    if (!env.CATTLE_TEST_URL || !env.ADMIN_TOKEN || !env.USER_TOKEN ||
+                    (env.CATTLE_TEST_URL == "" && env.ADMIN_TOKEN == "" && env.USER_TOKEN == "")) {
                     // deploy rancher server
-                    sh "docker run --name ${setupContainer} -t --env-file ${envFile} " +
-                      "${imageName} /bin/bash -c \'export RANCHER_SERVER_VERSION=${rancher_version} && " +
-                      "pytest -v -s --junit-xml=${setupResultsOut} " +
-                      "${deployPytestOptions} ${testsDir}\'"
+                        sh "docker run --name ${setupContainer} -t --env-file ${envFile} " +
+                          "${imageName} /bin/bash -c \'export RANCHER_SERVER_VERSION=${rancher_version} && " +
+                          "pytest -v -s --junit-xml=${setupResultsOut} " +
+                          "${deployPytestOptions} ${testsDir}\'"
 
-                    // copy file containing CATTLE_TEST_URL, ADMIN_TOKEN, USER_TOKEN and load into environment variables
-                    sh "docker cp ${setupContainer}:${rootPath}${testsDir}${rancherConfig} ."
-                    load rancherConfig
+                        // copy file containing CATTLE_TEST_URL, ADMIN_TOKEN, USER_TOKEN and load into environment variables
+                        sh "docker cp ${setupContainer}:${rootPath}${testsDir}${rancherConfig} ."
+                        load rancherConfig
 
-                    CATTLE_TEST_URL_2 = "${CATTLE_TEST_URL}"
-                    ADMIN_TOKEN_2 = "${ADMIN_TOKEN}"
-                    USER_TOKEN_2 = "${USER_TOKEN}"
+                        CATTLE_TEST_URL_2 = "${CATTLE_TEST_URL}"
+                        ADMIN_TOKEN_2 = "${ADMIN_TOKEN}"
+                        USER_TOKEN_2 = "${USER_TOKEN}"
+                        RANCHER_DEPLOYED = true
+                        }
+                        else {
+                          echo "User Provided Rancher Server"
+                          RANCHER_DEPLOYED = false
+                          }
                   } catch(err) {
                     echo "Error: " + err
                     echo 'Test run had failures. Collecting results...'
