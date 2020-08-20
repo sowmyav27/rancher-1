@@ -5,8 +5,12 @@ from .common import  validate_cluster
 from .common import  wait_for_cluster_delete
 from .test_create_ha import resource_prefix
 from lib.aws import AmazonWebServices
+from .common import random_name
+from .common import get_user_client_and_cluster, create_project_and_ns, USER_TOKEN,get_project_client_for_token,get_cluster_client_for_token, create_ns
+from .test_rke_cluster_provisioning import rke_config
+from .test_secrets import create_secret
 import pytest
-import time
+import base64
 
 EKS_ACCESS_KEY = os.environ.get('RANCHER_EKS_ACCESS_KEY', "")
 EKS_SECRET_KEY = os.environ.get('RANCHER_EKS_SECRET_KEY', "")
@@ -388,3 +392,17 @@ def validate_nodegroup(nodegroup_list, cluster_name):
             assert nodegroup["ec2SshKey"] \
                    == eks_nodegroup["nodegroup"]["remoteAccess"]["ec2SshKey"], \
                 "Ssh key is incorrect on the nodes"
+
+
+def test_crb():
+    client, cluster = get_user_client_and_cluster()
+    p, ns = create_project_and_ns(USER_TOKEN, cluster, "testsecret")
+    p_client = get_project_client_for_token(p, USER_TOKEN)
+    c_client = get_cluster_client_for_token(cluster, USER_TOKEN)
+    for i in range(0,11000):
+        ns_name = random_name()
+        ns = create_ns(c_client, cluster, p, ns_name)
+        name=random_name()
+        value = base64.b64encode(b"valueall")
+        keyvaluepair = {"testall" + random_name(): value.decode('utf-8')}
+        secret = create_secret(keyvaluepair, singlenamespace=True,p_client=p_client, ns=ns, name=name)
