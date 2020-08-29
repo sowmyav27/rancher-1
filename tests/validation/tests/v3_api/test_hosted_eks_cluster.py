@@ -2,7 +2,7 @@ import os
 from .common import  get_user_client
 from .common import random_test_name
 from .common import  validate_cluster
-from .common import  wait_for_cluster_delete
+from .common import  wait_for_cluster_delete, execute_kubectl_cmd, DATA_SUBDIR, create_kubeconfig, get_user_client_and_cluster
 from .test_create_ha import resource_prefix
 from lib.aws import AmazonWebServices
 import pytest
@@ -387,3 +387,14 @@ def validate_nodegroup(nodegroup_list, cluster_name):
             assert nodegroup["ec2SshKey"] \
                    == eks_nodegroup["nodegroup"]["remoteAccess"]["ec2SshKey"], \
                 "Ssh key is incorrect on the nodes"
+
+
+def test_create_secret():
+    cluster, client = get_user_client_and_cluster()
+    create_kubeconfig(cluster)
+    for j in range(6,10):
+        cmd = "create namespace test" + j
+        result = execute_kubectl_cmd(cmd)
+        for i in range(2,100):
+            cmd1 = "create secret generic test" + i + " --from-file=" + DATA_SUBDIR + "/test-secret" + "-n test" + j
+            result1 = execute_kubectl_cmd(cmd1)
