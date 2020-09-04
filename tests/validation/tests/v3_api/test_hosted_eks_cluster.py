@@ -1,6 +1,7 @@
 import os
 from .common import get_user_client, validate_cluster, \
     random_test_name, AWS_SSH_KEY_NAME, wait_for_cluster_delete
+from .test_rke_cluster_provisioning import rke_config
 from .test_create_ha import resource_prefix
 from lib.aws import AmazonWebServices
 import pytest
@@ -23,6 +24,7 @@ EKS_PUBLIC_ACCESS_SOURCES = \
 ekscredential = pytest.mark.skipif(not (EKS_ACCESS_KEY and EKS_SECRET_KEY),
                                    reason='EKS Credentials not provided, '
                                           'cannot create cluster')
+ADMIN_USER = os.environ.get('RANCHER_ADMIN_USER', "")
 DEFAULT_TIMEOUT_EKS = 1200
 IMPORTED_EKS_CLUSTERS = []
 
@@ -386,3 +388,29 @@ def wait_for_cluster_delete_eks(cluster_name, timeout=DEFAULT_TIMEOUT_EKS):
                 "Timed out waiting for cluster to get deleted")
         time.sleep(.5)
         cluster = AmazonWebServices().describe_eks_cluster(cluster_name)
+
+
+def test_rb():
+    client = get_user_client()
+    for i in range(0, 100):
+        cluster = client.create_cluster(name=random_test_name("cluster"),
+                                        driver="rancherKubernetesEngine",
+                                        rancherKubernetesEngineConfig=
+                                        rke_config)
+    clusters = client.list_cluster().data
+    print("cluster:", clusters)
+    for cluster in clusters:
+        for i in range(0, 1):
+            # create role template
+            role_temp = client.create_role_template(name=random_test_name("role"),
+                                                    context="cluster",
+                                                    rules=[{"type": "policyRule",
+                                                            "verbs": ["create", "delete", "get", "list"],
+                                                            "apiGroups": ["*"], "resources": ["nodes"]}])
+            time.sleep(.5)
+            crtb = client.create_cluster_role_template_binding(
+                clusterId=cluster.id,
+                roleTemplateId=role_temp.id,
+                subjectKind="User",
+                userId=ADMIN_USER)
+
