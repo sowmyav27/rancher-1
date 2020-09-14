@@ -39,6 +39,7 @@ eks_config = {
         "nodeGroups": [{
             "desiredSize": EKS_NODESIZE,
             "diskSize": 20,
+            "version": EKS_K8S_VERSION,
             "gpu": False,
             "instanceType": "t3.medium",
             "maxSize": EKS_NODESIZE,
@@ -266,6 +267,7 @@ def get_eks_config_all(cluster_name):
 def get_new_node():
     new_nodegroup = {
         "desiredSize": EKS_NODESIZE,
+        "version": EKS_K8S_VERSION,
         "diskSize": 20,
         "gpu": False,
         "instanceType": "t3.medium",
