@@ -2,10 +2,12 @@ import os
 from .common import  get_user_client
 from .common import random_test_name
 from .common import  validate_cluster
-from .common import  wait_for_cluster_delete
+from .common import  wait_for_cluster_delete, get_admin_client, get_user_client_and_cluster
 from .test_create_ha import resource_prefix
 from lib.aws import AmazonWebServices
 import pytest
+import time
+from .test_rke_cluster_provisioning import rke_config
 
 EKS_ACCESS_KEY = os.environ.get('RANCHER_EKS_ACCESS_KEY', "")
 EKS_SECRET_KEY = os.environ.get('RANCHER_EKS_SECRET_KEY', "")
@@ -384,3 +386,26 @@ def validate_nodegroup(nodegroup_list, cluster_name):
             assert nodegroup["ec2SshKey"] \
                    == eks_nodegroup["nodegroup"]["remoteAccess"]["ec2SshKey"], \
                 "Ssh key is incorrect on the nodes"
+
+
+def test_crb():
+    client = get_admin_client()
+    # for i in range(0,200):
+    #     cluster = client.create_cluster(
+    #         name=random_test_name("test"),
+    #         driver="rancherKubernetesEngine",
+    #         rancherKubernetesEngineConfig=rke_config)
+    client, cluster = get_user_client_and_cluster()
+    print("cluster:",cluster)
+    # for cluster in cluster_existing:
+    for i in range(0,4000):
+         # create role template
+        role_temp = client.create_role_template(name=random_test_name("role"),
+                                                context="cluster",
+                                                rules=[{"type": "policyRule", "verbs": ["create", "delete", "get", "list"], "apiGroups": ["*"], "resources": ["nodes"]}])
+        time.sleep(.5)
+        crtb = client.create_cluster_role_template_binding(
+            clusterId=cluster.id,
+            roleTemplateId=role_temp.id,
+            subjectKind="User",
+            userId="user-ksgdm")
