@@ -116,7 +116,8 @@ class AmazonWebServices(CloudProviderBase):
             ssh_private_key = self.master_ssh_key
             ssh_private_key_path = self.master_ssh_key_path
 
-        args = {"ImageId": ami,
+        args = {"Architecture": "arm64",
+                "ImageId": ami,
                 "InstanceType": instance_type,
                 "MinCount": 1,
                 "MaxCount": 1,
