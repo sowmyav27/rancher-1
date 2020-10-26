@@ -178,6 +178,8 @@ node {
                       string(name: 'RANCHER_UPGRADE_CHECK', value: "${RANCHER_UPGRADE_CHECK}"),
                       string(name: 'RANCHER_VALIDATE_RESOURCES_PREFIX', value: "${RANCHER_VALIDATE_RESOURCES_PREFIX}"),
                       string(name: 'RANCHER_CREATE_RESOURCES_PREFIX', value: "${RANCHER_CREATE_RESOURCES_PREFIX}"),
+                      string(name: 'RANCHER_TEST_OS', value: "${RANCHER_TEST_OS}"),
+                      string(name: 'RANCHER_TEST_IMAGE', value: "${RANCHER_TEST_IMAGE}"),
                     ]
                     echo "Params are: ${params}"
                     jobs["test-${i}"] = { build job: 'rancher-v3_needs_cluster', parameters: params }
