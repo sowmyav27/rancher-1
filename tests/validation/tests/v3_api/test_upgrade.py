@@ -480,14 +480,15 @@ def create_project_client(request):
     cluster = clusters[0]
     create_kubeconfig(cluster)
     namespace["cluster"] = cluster
-    if len(admin_client.list_catalog(name="test-catalog")) == 0:
-        catalog = admin_client.create_catalog(
+    if len(admin_client.list_clusterCatalog(name="test-catalog")) == 0:
+        catalog = admin_client.create_clusterCatalog(
             name="test-catalog",
-            baseType="catalog",
+            baseType="clustercatalog",
+            clusterId=cluster["id"],
             branch=catalogBranch,
             kind="helm",
             url=catalogUrl)
-        catalog = wait_for_catalog_active(admin_client, catalog)
+        catalog = wait_for_catalog_active(admin_client, catalog, scope="cluster")
 
 
 def create_project_resources():
