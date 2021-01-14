@@ -308,7 +308,18 @@ def get_setting_value_by_name(name):
     settings_url = CATTLE_API_URL + "/settings/" + name
     head = {'Authorization': 'Bearer ' + ADMIN_TOKEN}
     response = requests.get(settings_url, verify=False, headers=head)
+    print("response:", response)
     return response.json()["value"]
+
+
+def set_setting_value_by_name(name, value):
+    settings_url = CATTLE_API_URL + "/settings/" + name
+    head = {'Authorization': 'Bearer ' + ADMIN_TOKEN}
+    response = requests.get(settings_url, verify=False, headers=head)
+    response.json()["value"] = value
+    put_response = requests.put(settings_url, verify=False, headers=head, data=response.json())
+    print(put_response)
+
 
 
 # Return value is negative if v1 < v2, zero if v1 == v2 and positive if v1 > v2
