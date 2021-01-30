@@ -1,0 +1,164 @@
+#!groovy
+
+
+def needs_cluster() {
+    try {
+      jobs = [:]
+      cluster_arr = env.RANCHER_K8S_VERSION.split(",")
+      cluster_count = cluster_arr.size()
+      for (int i = 0; i < cluster_count * 4; i++) {
+        cluster_name = "CLUSTER_NAME_" + ${i}
+        env_cluster_name = env.${cluster_name}
+        echo ${env_cluster_name}
+        def params = [
+          string(name: 'CATTLE_TEST_URL', value: "${CATTLE_TEST_URL}"),
+          string(name: 'ADMIN_TOKEN', value: "${ADMIN_TOKEN}"),
+          string(name: 'USER_TOKEN', value: "${USER_TOKEN}"),
+          string(name: 'RANCHER_CLUSTER_NAME', value: "${env_cluster_name}"),
+          string(name: 'PYTEST_OPTIONS', value: "${PYTEST_OPTIONS}"),
+        ]
+        echo "Params are: ${params}"
+        jobs["test-${i}"] = { build job: 'rancher-v3_needs_cluster', parameters: params }
+      }
+      parallel jobs
+  } catch(err) {
+      echo "Error: " + err
+      currentBuild.result = 'UNSTABLE'
+  }
+}
+
+node {
+  def rootPath = "/src/rancher-validation/"
+  def job_name = "${JOB_NAME}"
+  if (job_name.contains('/')) {
+    job_names = job_name.split('/')
+    job_name = job_names[job_names.size() - 1]
+  }
+
+  def TESTS_TO_RUN =  [ "test_wl", "test_connectivity", "test_ingress", "test_service_discovery", "test_websocket"]
+  def PYTEST_OPTIONS = "-k \"" + TESTS_TO_RUN.join(" or ") +"\""
+
+  def setupContainer = "${job_name}${env.BUILD_NUMBER}_setup"
+  def clusterSetupContainer = "${job_name}${env.BUILD_NUMBER}_cluster_setup"
+
+  def deployPytestOptions = "-k test_deploy_rancher_server"
+  def deployClusterPytestOptions = "-k test_deploy_k3s"
+
+  def setupResultsOut = "setup-results.xml"
+  def imageName = "rancher-validation-${job_name}${env.BUILD_NUMBER}"
+  def testsDir = "tests/v3_api/"
+
+  def envFile = ".env"
+  def rancherConfig = "rancher_env.config"
+
+  def branch = "master"
+  if ("${env.branch}" != "null" && "${env.branch}" != "") {
+    branch = "${env.branch}"
+  }
+
+  wrap([$class: 'AnsiColorBuildWrapper', 'colorMapName': 'XTerm', 'defaultFg': 2, 'defaultBg':1]) {
+    withFolderProperties {
+      withCredentials([ string(credentialsId: 'AWS_ACCESS_KEY_ID', variable: 'AWS_ACCESS_KEY_ID'),
+                        string(credentialsId: 'AWS_SECRET_ACCESS_KEY', variable: 'AWS_SECRET_ACCESS_KEY'),
+                        string(credentialsId: 'AWS_SSH_PEM_KEY', variable: 'AWS_SSH_PEM_KEY'),
+                        string(credentialsId: 'RANCHER_SSH_KEY', variable: 'RANCHER_SSH_KEY'),
+                        string(credentialsId: 'ADMIN_PASSWORD', variable: 'ADMIN_PASSWORD'),
+                        string(credentialsId: 'USER_PASSWORD', variable: 'USER_PASSWORD')]) {
+        stage('Checkout') {
+          deleteDir()
+          checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: "*/${branch}"]],
+                    extensions: scm.extensions + [[$class: 'CleanCheckout']],
+                    userRemoteConfigs: scm.userRemoteConfigs
+                  ])
+        }
+
+        dir ("tests/validation") {
+          try {
+            stage('Configure and Build') {
+              if (env.AWS_SSH_PEM_KEY && env.AWS_SSH_KEY_NAME) {
+                dir(".ssh") {
+                  def decoded = new String(AWS_SSH_PEM_KEY.decodeBase64())
+                  writeFile file: AWS_SSH_KEY_NAME, text: decoded
+                }
+              }
+
+              sh "./tests/v3_api/scripts/configure.sh"
+              sh "./tests/v3_api/scripts/build.sh"
+            }
+
+            stage('Deploy Rancher Server') {
+              try {
+                if (!env.CATTLE_TEST_URL.trim() && !env.ADMIN_TOKEN.trim() && !env.USER_TOKEN.trim()) {
+                  // deploy rancher server
+                  sh "docker run --name ${setupContainer} -t --env-file ${envFile} " +
+                    "${imageName} /bin/bash -c \'export RANCHER_AUTO_DEPLOY_CUSTOM_CLUSTER=False " +
+                    "&& pytest -v -s --junit-xml=${setupResultsOut} " +
+                    "${deployPytestOptions} ${testsDir}\'"
+                  RANCHER_DEPLOYED = true
+
+                  // copy file containing CATTLE_TEST_URL, ADMIN_TOKEN, USER_TOKEN and load into environment variables
+                  sh "docker cp ${setupContainer}:${rootPath}${testsDir}${rancherConfig} ."
+                  load rancherConfig
+                }
+                else {
+                  echo "User Provided Rancher Server"
+                  RANCHER_DEPLOYED = false
+                }
+
+              } catch(err) {
+                echo "Error: " + err
+                RANCHER_DEPLOYED = false
+              }
+            }
+
+            stage('Deploy Clusters') {
+              try {
+                  echo "Deploying clusters."
+                  jobs = [:]
+                  def params = [
+                    string(name: 'RANCHER_HOST_NAME', value: "${RANCHER_HOST_NAME}"),
+                    string(name: 'CATTLE_TEST_URL', value: "${CATTLE_TEST_URL}"),
+                    string(name: 'ADMIN_TOKEN', value: "${ADMIN_TOKEN}"),
+                    string(name: 'USER_TOKEN', value: "${USER_TOKEN}"),
+                    string(name: 'RANCHER_NODE_COUNT_KDM_CLUSTER', value: "${RANCHER_NODE_COUNT_KDM_CLUSTER}"),
+                    string(name: 'RANCHER_K8S_VERSION', value: "${RANCHER_K8S_VERSION}"),
+                    string(name: 'AWS_SG', value: "${AWS_SG}"),
+                  ]
+                  echo "Params are: ${params}"
+                  jobs["test"] = { build job: 'rancher-v3-kdm-changes', parameters: params }
+
+                  parallel jobs
+                  CLUSTERS_CREATED = true
+              } catch(err) {
+                  echo "Error: " + err
+                  currentBuild.result = 'UNSTABLE'
+              }
+            }
+
+            stage('Run Network Tests in Parallel') {
+              needs_cluster()
+            }
+
+          } catch(err) {
+            echo "Error: " + err
+          } finally {
+
+            stage('Test Report') {
+              // copy and archive test results
+              if (RANCHER_DEPLOYED) {
+                sh "docker cp ${setupContainer}:${rootPath}${setupResultsOut} ."
+                sh "docker stop ${setupContainer}"
+                sh "docker rm -v ${setupContainer}"
+                step([$class: 'JUnitResultArchiver', testResults: "**/${setupResultsOut}"])
+              }
+            }
+
+            sh "docker rmi ${imageName}"
+          } // finally
+        } // dir
+      } // creds
+    } // folder properties
+  } // wrap
+} // node
